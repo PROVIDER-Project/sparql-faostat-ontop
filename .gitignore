@@ -1,0 +1,4 @@
+# Runtime artifacts created by docker compose up
+data/
+run/
+jdbc/

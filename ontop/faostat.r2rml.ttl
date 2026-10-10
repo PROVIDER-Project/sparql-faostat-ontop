@@ -1,0 +1,266 @@
+# R2RML mapping for the FAOSTAT QCL 2025 snapshot in DuckDB.
+# Column literals have explicit RDF datatypes; metadata is mapped from SELECT 1.
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix ex: <https://example.org/faostat/vocab/> .
+@prefix qb: <http://purl.org/linked-data/cube#> .
+@prefix sdmx-dimension: <http://purl.org/linked-data/sdmx/2009/dimension#> .
+@prefix sdmx-attribute: <http://purl.org/linked-data/sdmx/2009/attribute#> .
+@prefix sdmx-measure: <http://purl.org/linked-data/sdmx/2009/measure#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+
+<https://example.org/faostat/mapping/observations> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT AREA_CODE, ITEM_CODE, ELEMENT_CODE, CAST(YEAR AS VARCHAR) AS YEAR, OBS_VALUE, UNIT, FLAG, NOTE FROM faostat WHERE OBS_VALUE IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/observation/QCL/{AREA_CODE}/{ITEM_CODE}/{ELEMENT_CODE}/{YEAR}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:Observation ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:dataSet ; rr:objectMap [ rr:constant <https://example.org/faostat/dataset/QCL> ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-dimension:refArea ; rr:objectMap [ rr:template "https://example.org/faostat/area/{AREA_CODE}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:item ; rr:objectMap [ rr:template "https://example.org/faostat/item/{ITEM_CODE}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:element ; rr:objectMap [ rr:template "https://example.org/faostat/element/{ELEMENT_CODE}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-dimension:refPeriod ; rr:objectMap [ rr:column "YEAR" ; rr:termType rr:Literal ; rr:datatype xsd:gYear ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-measure:obsValue ; rr:objectMap [ rr:column "OBS_VALUE" ; rr:termType rr:Literal ; rr:datatype xsd:double ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-attribute:unitMeasure ; rr:objectMap [ rr:template "https://example.org/faostat/unit/{UNIT}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:flag ; rr:objectMap [ rr:template "https://example.org/faostat/flag/{FLAG}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:note ; rr:objectMap [ rr:column "NOTE" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
+
+
+<https://example.org/faostat/mapping/dataset> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/dataset/QCL> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:DataSet ] ] ;
+    rr:predicateObjectMap [ rr:predicate dct:identifier ; rr:objectMap [ rr:constant "QCL-2025" ] ] ;
+    rr:predicateObjectMap [ rr:predicate dct:title ; rr:objectMap [ rr:constant "FAOSTAT - Production: Crops and livestock products (2025 snapshot)" ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:structure ; rr:objectMap [ rr:constant <https://example.org/faostat/structure/QCL> ] ] ;
+    rr:predicateObjectMap [ rr:predicate dct:publisher ; rr:objectMap [ rr:constant <https://www.fao.org/> ] ] ;
+    rr:predicateObjectMap [ rr:predicate dct:source ; rr:objectMap [ rr:constant <https://www.fao.org/faostat/en/#data/QCL> ] ] ;
+    rr:predicateObjectMap [ rr:predicate dct:license ; rr:objectMap [ rr:constant <https://creativecommons.org/licenses/by/4.0/> ] ] ;
+    rr:predicateObjectMap [ rr:predicate dct:bibliographicCitation ; rr:objectMap [ rr:constant "FAO. 2025. FAOSTAT: Production: Crops and livestock products. [Accessed on 10 October 2026]. https://www.fao.org/faostat/en/#data/QCL. Licence: CC-BY-4.0." ] ] .
+
+
+<https://example.org/faostat/mapping/area-codes> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT AREA_CODE, AREA, M49_CODE FROM faostat WHERE AREA_CODE IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/area/{AREA_CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/area> ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:notation ; rr:objectMap [ rr:column "AREA_CODE" ; rr:termType rr:Literal ; rr:datatype xsd:integer ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:prefLabel ; rr:objectMap [ rr:column "AREA" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:m49Code ; rr:objectMap [ rr:column "M49_CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
+
+
+<https://example.org/faostat/mapping/area-scheme> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/scheme/area> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:ConceptScheme ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:label ; rr:objectMap [ rr:constant "FAOSTAT area codes" ] ] .
+
+
+<https://example.org/faostat/mapping/item-codes> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT ITEM_CODE, ITEM, CPC_CODE FROM faostat WHERE ITEM_CODE IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/item/{ITEM_CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/item> ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:notation ; rr:objectMap [ rr:column "ITEM_CODE" ; rr:termType rr:Literal ; rr:datatype xsd:integer ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:prefLabel ; rr:objectMap [ rr:column "ITEM" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:cpcCode ; rr:objectMap [ rr:column "CPC_CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
+
+
+<https://example.org/faostat/mapping/item-scheme> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/scheme/item> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:ConceptScheme ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:label ; rr:objectMap [ rr:constant "FAOSTAT item codes" ] ] .
+
+
+<https://example.org/faostat/mapping/element-codes> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT ELEMENT_CODE, ELEMENT FROM faostat WHERE ELEMENT_CODE IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/element/{ELEMENT_CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/element> ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:notation ; rr:objectMap [ rr:column "ELEMENT_CODE" ; rr:termType rr:Literal ; rr:datatype xsd:integer ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:prefLabel ; rr:objectMap [ rr:column "ELEMENT" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
+
+
+<https://example.org/faostat/mapping/element-scheme> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/scheme/element> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:ConceptScheme ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:label ; rr:objectMap [ rr:constant "FAOSTAT element codes" ] ] .
+
+
+<https://example.org/faostat/mapping/unit-codes> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT UNIT FROM faostat WHERE UNIT IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/unit/{UNIT}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/unit> ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:notation ; rr:objectMap [ rr:column "UNIT" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:prefLabel ; rr:objectMap [ rr:column "UNIT" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
+
+
+<https://example.org/faostat/mapping/unit-scheme> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/scheme/unit> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:ConceptScheme ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:label ; rr:objectMap [ rr:constant "FAOSTAT unit codes" ] ] .
+
+
+<https://example.org/faostat/mapping/flag-codes> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FLAG FROM faostat WHERE FLAG IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/flag/{FLAG}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/flag> ] ] ;
+    rr:predicateObjectMap [ rr:predicate skos:notation ; rr:objectMap [ rr:column "FLAG" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
+
+
+<https://example.org/faostat/mapping/flag-scheme> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/scheme/flag> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:ConceptScheme ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:label ; rr:objectMap [ rr:constant "FAOSTAT flag codes" ] ] .
+
+
+<https://example.org/faostat/mapping/structure> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/structure/QCL> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:DataStructureDefinition ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/area> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/item> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/element> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/period> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/value> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/unit> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/flag> ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:component ; rr:objectMap [ rr:constant <https://example.org/faostat/component/note> ] ] .
+
+
+<https://example.org/faostat/mapping/area-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/area> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:dimension ; rr:objectMap [ rr:constant sdmx-dimension:refArea ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:order ; rr:objectMap [ rr:constant 1 ] ] .
+
+
+<https://example.org/faostat/mapping/area-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-dimension:refArea ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:DimensionProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:codeList ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/area> ] ] .
+
+
+<https://example.org/faostat/mapping/item-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/item> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:dimension ; rr:objectMap [ rr:constant ex:item ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:order ; rr:objectMap [ rr:constant 2 ] ] .
+
+
+<https://example.org/faostat/mapping/item-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:item ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:DimensionProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:codeList ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/item> ] ] .
+
+
+<https://example.org/faostat/mapping/element-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/element> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:dimension ; rr:objectMap [ rr:constant ex:element ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:order ; rr:objectMap [ rr:constant 3 ] ] .
+
+
+<https://example.org/faostat/mapping/element-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:element ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:DimensionProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:codeList ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/element> ] ] .
+
+
+<https://example.org/faostat/mapping/period-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/period> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:dimension ; rr:objectMap [ rr:constant sdmx-dimension:refPeriod ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:order ; rr:objectMap [ rr:constant 4 ] ] .
+
+
+<https://example.org/faostat/mapping/period-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-dimension:refPeriod ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:DimensionProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant xsd:gYear ] ] .
+
+
+<https://example.org/faostat/mapping/value-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/value> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:measure ; rr:objectMap [ rr:constant sdmx-measure:obsValue ] ] .
+
+
+<https://example.org/faostat/mapping/value-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-measure:obsValue ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:MeasureProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant xsd:double ] ] .
+
+
+<https://example.org/faostat/mapping/unit-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/unit> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:attribute ; rr:objectMap [ rr:constant sdmx-attribute:unitMeasure ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:componentRequired ; rr:objectMap [ rr:constant true ] ] .
+
+
+<https://example.org/faostat/mapping/unit-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-attribute:unitMeasure ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:AttributeProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:codeList ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/unit> ] ] .
+
+
+<https://example.org/faostat/mapping/flag-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/flag> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:attribute ; rr:objectMap [ rr:constant ex:flag ] ] .
+
+
+<https://example.org/faostat/mapping/flag-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:flag ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:AttributeProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant skos:Concept ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:codeList ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/flag> ] ] .
+
+
+<https://example.org/faostat/mapping/note-component> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/faostat/component/note> ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:ComponentSpecification ] ] ;
+    rr:predicateObjectMap [ rr:predicate qb:attribute ; rr:objectMap [ rr:constant ex:note ] ] .
+
+
+<https://example.org/faostat/mapping/note-property> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:note ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant rdf:Property ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:AttributeProperty ] ] ;
+    rr:predicateObjectMap [ rr:predicate rdfs:range ; rr:objectMap [ rr:constant xsd:string ] ] .
