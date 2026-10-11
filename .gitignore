@@ -2,3 +2,5 @@
 data/
 run/
 jdbc/
+
+__pycache__/

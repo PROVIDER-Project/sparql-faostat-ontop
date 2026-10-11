@@ -1,41 +1,42 @@
 services:
   fetch:
     image: curlimages/curl:8.10.1
-    user: '0'
-    entrypoint:
-    - sh
-    - -c
+    user: "0"
+    entrypoint: ["sh", "-c"]
     command:
-    - "set -eu;\nzst=/data/FAOSTAT.csv.zst;\njar=/jdbc/duckdb_jdbc-1.5.6.0.jar;\nif [ ! -s \"$$zst\" ]; then\n \
-      \ curl -fL --retry 3 -o \"$$zst.part\" \"https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/Production_Crops_Livestock_E_All_Data_Normalized-2025/1/Production_Crops_Livestock_E_All_Data_Normalized-2025-1-Production_Crops_Livestock_E_All_Data_Normalized.csv.zst\"\
-      ;\n  mv \"$$zst.part\" \"$$zst\";\nfi;\nif [ ! -s \"$$jar\" ]; then\n  curl -fL --retry 3 -o \"$$jar.part\"\
-      \ \"https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar\";\n  mv \"\
-      $$jar.part\" \"$$jar\";\nfi;\necho \"fetch: ready\""
+      - |
+        set -eu
+        zst=/data/FAOSTAT.csv.zst
+        jar=/jdbc/duckdb_jdbc-1.5.6.0.jar
+        if [ ! -s "$$zst" ]; then
+          curl -fL --retry 3 -o "$$zst.part" "https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/Production_Crops_Livestock_E_All_Data_Normalized-2025/1/Production_Crops_Livestock_E_All_Data_Normalized-2025-1-Production_Crops_Livestock_E_All_Data_Normalized.csv.zst"
+          mv "$$zst.part" "$$zst"
+        fi
+        if [ ! -s "$$jar" ]; then
+          curl -fL --retry 3 -o "$$jar.part" "https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar"
+          mv "$$jar.part" "$$jar"
+        fi
+        echo "fetch: ready"
     volumes:
-    - ./data:/data
-    - ./jdbc:/jdbc
+      - ./data:/data
+      - ./jdbc:/jdbc
+
   load:
-    image: duckdb/duckdb:1.5.6
+    image: aksw/duckdb-shell:1.5.6
+    entrypoint: ["/bin/sh", "/opt/loader/load-duckdb.sh"]
     depends_on:
       fetch:
         condition: service_completed_successfully
     working_dir: /workspace
-    entrypoint:
-    - duckdb
     command:
-    - faostat.duckdb
-    - -c
-    - CREATE OR REPLACE TABLE faostat (AREA_CODE INTEGER, M49_CODE VARCHAR, AREA VARCHAR, ITEM_CODE INTEGER, CPC_CODE
-      VARCHAR, ITEM VARCHAR, ELEMENT_CODE INTEGER, ELEMENT VARCHAR, YEAR_CODE INTEGER, YEAR INTEGER, UNIT VARCHAR,
-      OBS_VALUE DOUBLE, FLAG VARCHAR, NOTE VARCHAR);
-    - -c
-    - INSERT INTO faostat SELECT CAST("Area Code" AS INTEGER), replace("Area Code (M49)", chr(39), ''), "Area",
-      CAST("Item Code" AS INTEGER), replace("Item Code (CPC)", chr(39), ''), "Item", CAST("Element Code" AS INTEGER),
-      "Element", CAST("Year Code" AS INTEGER), CAST("Year" AS INTEGER), "Unit", CAST("Value" AS DOUBLE), "Flag",
-      "Note" FROM read_csv('/data/FAOSTAT.csv.zst', header=true, all_varchar=true);
+      - faostat.duckdb
+      - /opt/ontop/input/load.sql
     volumes:
-    - ./data:/data:ro
-    - ./run:/workspace
+      - ./loader:/opt/loader:ro
+      - ./data:/data:ro
+      - ./run:/workspace
+      - ./ontop:/opt/ontop/input:ro
+
   ontop:
     image: ontop/ontop:5.5.0
     restart: unless-stopped
@@ -43,13 +44,14 @@ services:
       load:
         condition: service_completed_successfully
     ports:
-    - ${ONTOP_PORT:-8081}:8080
+      - "${ONTOP_PORT:-8081}:8080"
     environment:
-      ONTOP_LOG_LEVEL: debug
+      ONTOP_LOG_LEVEL: "debug"
       ONTOP_MAPPING_FILE: /opt/ontop/input/faostat.r2rml.ttl
       ONTOP_PROPERTIES_FILE: /opt/ontop/input/faostat.properties
       ONTOP_CONSTRAINT_FILE: /opt/ontop/input/faostat-constraints.lst
+      ONTOP_LENSES_FILE: /opt/ontop/input/faostat-lenses.json
     volumes:
-    - ./ontop:/opt/ontop/input:ro
-    - ./jdbc:/opt/ontop/jdbc:ro
-    - ./run:/data:ro
+      - ./ontop:/opt/ontop/input:ro
+      - ./jdbc:/opt/ontop/jdbc:ro
+      - ./run:/data:ro

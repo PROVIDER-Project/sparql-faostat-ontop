@@ -1,1 +1,6 @@
 faostat:AREA_CODE,ITEM_CODE,ELEMENT_CODE,YEAR
+faostat_area:AREA_CODE
+faostat_item:ITEM_CODE
+faostat_element:ELEMENT_CODE
+faostat_unit:UNIT
+faostat_flag:FLAG

@@ -1,0 +1,48 @@
+{
+  "relations": [
+    {
+      "name": [
+        "faostat_observations"
+      ],
+      "baseRelation": [
+        "faostat"
+      ],
+      "columns": {
+        "added": [],
+        "hidden": []
+      },
+      "filterExpression": "OBS_VALUE IS NOT NULL AND AREA_CODE IS NOT NULL AND ITEM_CODE IS NOT NULL AND ELEMENT_CODE IS NOT NULL AND YEAR IS NOT NULL AND OBSERVATION_LOCAL_NAME IS NOT NULL",
+      "uniqueConstraints": {
+        "added": [
+          {
+            "name": "faostat_observations_key",
+            "determinants": [
+              "AREA_CODE_LEXICAL",
+              "ITEM_CODE_LEXICAL",
+              "ELEMENT_CODE_LEXICAL",
+              "YEAR_LEXICAL"
+            ]
+          },
+          {
+            "name": "faostat_observation_local_name_key",
+            "determinants": [
+              "OBSERVATION_LOCAL_NAME"
+            ]
+          }
+        ]
+      },
+      "nonNullConstraints": {
+        "added": [
+          "AREA_CODE_LEXICAL",
+          "ITEM_CODE_LEXICAL",
+          "ELEMENT_CODE_LEXICAL",
+          "YEAR_LEXICAL",
+          "OBS_VALUE",
+          "OBS_VALUE_LEXICAL",
+          "OBSERVATION_LOCAL_NAME"
+        ]
+      },
+      "type": "BasicLens"
+    }
+  ]
+}

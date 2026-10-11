@@ -1,4 +1,5 @@
 # R2RML mapping for the FAOSTAT QCL 2025 snapshot in DuckDB.
+# Code lists are deduplicated during loading; observation keys are in the lens.
 # Column literals have explicit RDF datatypes; metadata is mapped from SELECT 1.
 @prefix rr: <http://www.w3.org/ns/r2rml#> .
 @prefix ex: <https://example.org/faostat/vocab/> .
@@ -14,15 +15,15 @@
 
 
 <https://example.org/faostat/mapping/observations> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT AREA_CODE, ITEM_CODE, ELEMENT_CODE, CAST(YEAR AS VARCHAR) AS YEAR, OBS_VALUE, UNIT, FLAG, NOTE FROM faostat WHERE OBS_VALUE IS NOT NULL" ] ;
-    rr:subjectMap [ rr:template "https://example.org/faostat/observation/QCL/{AREA_CODE}/{ITEM_CODE}/{ELEMENT_CODE}/{YEAR}" ; rr:termType rr:IRI ] ;
+    rr:logicalTable [ rr:tableName "faostat_observations" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/observation/QCL/{OBSERVATION_LOCAL_NAME}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant qb:Observation ] ] ;
     rr:predicateObjectMap [ rr:predicate qb:dataSet ; rr:objectMap [ rr:constant <https://example.org/faostat/dataset/QCL> ] ] ;
-    rr:predicateObjectMap [ rr:predicate sdmx-dimension:refArea ; rr:objectMap [ rr:template "https://example.org/faostat/area/{AREA_CODE}" ; rr:termType rr:IRI ] ] ;
-    rr:predicateObjectMap [ rr:predicate ex:item ; rr:objectMap [ rr:template "https://example.org/faostat/item/{ITEM_CODE}" ; rr:termType rr:IRI ] ] ;
-    rr:predicateObjectMap [ rr:predicate ex:element ; rr:objectMap [ rr:template "https://example.org/faostat/element/{ELEMENT_CODE}" ; rr:termType rr:IRI ] ] ;
-    rr:predicateObjectMap [ rr:predicate sdmx-dimension:refPeriod ; rr:objectMap [ rr:column "YEAR" ; rr:termType rr:Literal ; rr:datatype xsd:gYear ] ] ;
-    rr:predicateObjectMap [ rr:predicate sdmx-measure:obsValue ; rr:objectMap [ rr:column "OBS_VALUE" ; rr:termType rr:Literal ; rr:datatype xsd:double ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-dimension:refArea ; rr:objectMap [ rr:template "https://example.org/faostat/area/{AREA_CODE_LEXICAL}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:item ; rr:objectMap [ rr:template "https://example.org/faostat/item/{ITEM_CODE_LEXICAL}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate ex:element ; rr:objectMap [ rr:template "https://example.org/faostat/element/{ELEMENT_CODE_LEXICAL}" ; rr:termType rr:IRI ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-dimension:refPeriod ; rr:objectMap [ rr:column "YEAR_LEXICAL" ; rr:termType rr:Literal ; rr:datatype xsd:gYear ] ] ;
+    rr:predicateObjectMap [ rr:predicate sdmx-measure:obsValue ; rr:objectMap [ rr:column "OBS_VALUE_LEXICAL" ; rr:termType rr:Literal ; rr:datatype xsd:double ] ] ;
     rr:predicateObjectMap [ rr:predicate sdmx-attribute:unitMeasure ; rr:objectMap [ rr:template "https://example.org/faostat/unit/{UNIT}" ; rr:termType rr:IRI ] ] ;
     rr:predicateObjectMap [ rr:predicate ex:flag ; rr:objectMap [ rr:template "https://example.org/faostat/flag/{FLAG}" ; rr:termType rr:IRI ] ] ;
     rr:predicateObjectMap [ rr:predicate ex:note ; rr:objectMap [ rr:column "NOTE" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
@@ -42,7 +43,7 @@
 
 
 <https://example.org/faostat/mapping/area-codes> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT AREA_CODE, AREA, M49_CODE FROM faostat WHERE AREA_CODE IS NOT NULL" ] ;
+    rr:logicalTable [ rr:tableName "faostat_area" ] ;
     rr:subjectMap [ rr:template "https://example.org/faostat/area/{AREA_CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
     rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/area> ] ] ;
@@ -59,7 +60,7 @@
 
 
 <https://example.org/faostat/mapping/item-codes> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT ITEM_CODE, ITEM, CPC_CODE FROM faostat WHERE ITEM_CODE IS NOT NULL" ] ;
+    rr:logicalTable [ rr:tableName "faostat_item" ] ;
     rr:subjectMap [ rr:template "https://example.org/faostat/item/{ITEM_CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
     rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/item> ] ] ;
@@ -76,7 +77,7 @@
 
 
 <https://example.org/faostat/mapping/element-codes> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT ELEMENT_CODE, ELEMENT FROM faostat WHERE ELEMENT_CODE IS NOT NULL" ] ;
+    rr:logicalTable [ rr:tableName "faostat_element" ] ;
     rr:subjectMap [ rr:template "https://example.org/faostat/element/{ELEMENT_CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
     rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/element> ] ] ;
@@ -92,7 +93,7 @@
 
 
 <https://example.org/faostat/mapping/unit-codes> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT UNIT FROM faostat WHERE UNIT IS NOT NULL" ] ;
+    rr:logicalTable [ rr:tableName "faostat_unit" ] ;
     rr:subjectMap [ rr:template "https://example.org/faostat/unit/{UNIT}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
     rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/unit> ] ] ;
@@ -108,7 +109,7 @@
 
 
 <https://example.org/faostat/mapping/flag-codes> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FLAG FROM faostat WHERE FLAG IS NOT NULL" ] ;
+    rr:logicalTable [ rr:tableName "faostat_flag" ] ;
     rr:subjectMap [ rr:template "https://example.org/faostat/flag/{FLAG}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [ rr:predicate rdf:type ; rr:objectMap [ rr:constant skos:Concept ] ] ;
     rr:predicateObjectMap [ rr:predicate skos:inScheme ; rr:objectMap [ rr:constant <https://example.org/faostat/scheme/flag> ] ] ;
