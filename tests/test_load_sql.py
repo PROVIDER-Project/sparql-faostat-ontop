@@ -33,8 +33,33 @@ class LoadSqlTests(unittest.TestCase):
         self.database = self.root / 'fixture.duckdb'
         self.csv = self.root / 'fixture.csv'
         self.load = self.root / 'load.sql'
-        self.load.write_text((ROOT / 'ontop/load.sql').read_text().replace(
-            "'/data/FAOSTAT.csv.zst'", "'" + str(self.csv).replace("'", "''") + "'"))
+        self.definitions = self.root / 'country-region.csv'
+        self.memberships = self.root / 'country-group-membership.csv'
+        sql = (ROOT / 'ontop/load.sql').read_text()
+        for source, target in [('/data/FAOSTAT.csv.zst', self.csv),
+                               ('/data/country-region.csv.zst', self.definitions),
+                               ('/data/country-group-membership.csv.zst', self.memberships)]:
+            sql = sql.replace("'" + source + "'", "'" + str(target).replace("'", "''") + "'")
+        self.load.write_text(sql)
+        self.definition_rows = [
+            ['2', 'Afghanistan', '004', 'AF', 'AFG', '', ''],
+            ['3', 'Albania', '008', 'AL', 'ALB', '', ''],
+            ['5000', 'World', '001', 'F5000', 'WLD', '', ''],
+            ['5707', 'European Union (27)', '097', 'F5707', 'F5707', '', ''],
+            ['15', 'Belgium-Luxembourg', '058', 'F15', 'F15', '', '1999'],
+            ['186', 'Serbia and Montenegro', '891', 'CS', 'SCG', '1992', '2005'],
+            ['351', 'China', '159', 'F351', 'F351', '', ''],
+            ['41', 'China, mainland', '156', 'CN', 'CHN', '', ''],
+            ['96', 'China, Hong Kong SAR', '344', 'HK', 'HKG', '', ''],
+            ['214', 'China, Taiwan Province of', '158', 'TW', 'TWN', '', ''],
+            ['259', 'Channel Islands', '830', 'F259', 'CHA', '', ''],
+        ]
+        self.membership_rows = [
+            ['5000', 'World', '001', *r[:5]] for r in self.definition_rows
+            if r[0] in ('2', '3', '15', '186', '41', '96', '214', '259')
+        ] + [['5000', 'World', '001', '605', 'Unspecified', '', '', 'F605'],
+             ['5707', 'European Union (27)', '097', '3', 'Albania', '008', 'AL', 'ALB']]
+        self.write_definitions()
         self.rows = [
             [2, "'004", 'Afghanistan', 221, "'01371", 'Almonds', 5312, 'Area harvested', 1961, 1961, 'ha', 0, 'A', ''],
             [2, "'004", 'Afghanistan', 221, "'01371", 'Almonds', 5312, 'Area harvested', 1962, 1962, 'ha', 1.5, '', 'note'],
@@ -43,6 +68,19 @@ class LoadSqlTests(unittest.TestCase):
             [-2, "'009", 'Negative code', 221, "'01371", 'Almonds', 5312, 'Area harvested', 1961, 1961, 'ha', 7, 'A', ''],
         ]
         self.write_csv()
+
+    def write_definitions(self):
+        for path, header, rows in [
+            (self.definitions, ['Country Code', 'Country', 'M49 Code', 'ISO2 Code',
+                                'ISO3 Code', 'Start Year', 'End Year'], self.definition_rows),
+            (self.memberships, ['Country Group Code', 'Country Group', 'Group M49 Code',
+                               'Country Code', 'Country', 'M49 Code', 'ISO2 Code', 'ISO3 Code'],
+             self.membership_rows),
+        ]:
+            with path.open('w', newline='') as stream:
+                writer = csv.writer(stream)
+                writer.writerow(header)
+                writer.writerows(rows)
 
     def write_csv(self):
         with self.csv.open('w', newline='') as stream:
@@ -76,6 +114,45 @@ SELECT CASE WHEN count(*)=10 AND sum(CAST(is_unique AS INTEGER))=2 THEN true ELS
 """)
         # Running the SQL again replaces tables and indexes in the same transaction.
         self.assertEqual(self.run_sql(self.load).returncode, 0)
+
+    def test_country_links_and_exclusions(self):
+        for code, label in [('5000', 'World'), ('5707', 'European Union (27)'),
+                            ('15', 'Belgium-Luxembourg'), ('186', 'Serbia and Montenegro'),
+                            ('351', 'China'), ('41', 'China, mainland'),
+                            ('96', 'China, Hong Kong SAR'), ('214', 'China, Taiwan Province of')]:
+            row = list(self.rows[0])
+            row[0], row[1], row[2] = code, '', label
+            self.rows.append(row)
+        self.write_csv()
+        self.assertEqual(self.run_sql(self.load).returncode, 0)
+        self.assert_sql("""
+SELECT CASE WHEN count(*)=5 THEN true ELSE error('eligible World members') END FROM faostat_area_country WHERE AREA_CODE='5000';
+SELECT CASE WHEN count(*)=2 THEN true ELSE error('Albania identity and membership') END FROM faostat_area_country WHERE COUNTRY_CODE='ALB' AND AREA_CODE IN ('3','5707');
+SELECT CASE WHEN count(*)=1 THEN true ELSE error('mainland identity') END FROM faostat_area_country WHERE AREA_CODE='41' AND COUNTRY_CODE='CHN';
+SELECT CASE WHEN count(*)=1 THEN true ELSE error('Hong Kong preserved') END FROM faostat_area_country WHERE AREA_CODE='96' AND COUNTRY_CODE='HKG';
+SELECT CASE WHEN count(*)=1 THEN true ELSE error('Taiwan preserved') END FROM faostat_area_country WHERE AREA_CODE='214' AND COUNTRY_CODE='TWN';
+SELECT CASE WHEN count(*)=0 THEN true ELSE error('invented country link') END FROM faostat_area_country WHERE AREA_CODE IN ('15','186','351') OR COUNTRY_CODE IN ('WLD','F15','SCG','F351','CHA');
+SELECT CASE WHEN count(*)=3 THEN true ELSE error('auditable omissions') END FROM faostat_area_country_unresolved WHERE AREA_CODE IN ('15','186','351');
+SELECT CASE WHEN count(*)=4 THEN true ELSE error('excluded World members') END FROM faostat_area_member_exclusion WHERE AREA_CODE='5000';
+SELECT CASE WHEN count(*)=10 THEN true ELSE error('raw membership preserved') END FROM faostat_area_membership;
+SELECT CASE WHEN M49_CODE='004' THEN true ELSE error('definition leading zeros') END FROM faostat_country_definition WHERE AREA_CODE='2';
+SELECT CASE WHEN count(*)=1 THEN true ELSE error('country reverse index') END FROM duckdb_indexes() WHERE index_name='faostat_area_country_country_code_idx';
+""")
+        self.assertEqual(self.run_sql(self.load).returncode, 0)
+
+    def test_duplicate_membership_rolls_back(self):
+        self.assertEqual(self.run_sql(self.load).returncode, 0)
+        self.membership_rows.append(list(self.membership_rows[0]))
+        self.write_definitions()
+        self.assertNotEqual(self.run_sql(self.load).returncode, 0)
+        self.assert_sql("SELECT CASE WHEN count(*)=10 THEN true ELSE error('membership rollback') END FROM faostat_area_membership;")
+
+    def test_conflicting_iso3_rolls_back(self):
+        self.assertEqual(self.run_sql(self.load).returncode, 0)
+        self.membership_rows[0][-1] = 'XXX'
+        self.write_definitions()
+        self.assertNotEqual(self.run_sql(self.load).returncode, 0)
+        self.assert_sql("SELECT CASE WHEN count(*)=1 THEN true ELSE error('country rollback') END FROM faostat_area_country WHERE AREA_CODE='2' AND COUNTRY_CODE='AFG';")
 
     def test_duplicate_fact_key_rolls_back(self):
         self.assertEqual(self.run_sql(self.load).returncode, 0)

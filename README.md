@@ -20,12 +20,14 @@ about 856 MiB, compared with about 51 MiB before these changes.
 docker compose up -d
 ```
 
-1. `fetch` downloads the deployed CSV.zst and JDBC driver. Existing nonempty
+1. `fetch` downloads the deployed QCL CSV.zst, geographic definition CSV.zst
+   files, their source provenance/README, and JDBC driver. Existing nonempty
    files are reused. New downloads go to `.part` files and are renamed only
    after curl succeeds, preventing interrupted downloads from becoming cached inputs.
 2. `load` skips opening DuckDB when both `./run/faostat.duckdb.complete` and a
    nonempty database exist. Otherwise `ontop/load.sql` rebuilds `faostat`, five
-   small code-list tables, derived lookup columns and indexes in one transaction,
+   small code-list tables, geographic definitions/country links and audit tables,
+   derived lookup columns and indexes in one transaction,
    runs `ANALYZE`, and commits. The loader creates the completion marker only
    after DuckDB exits successfully. All CSV fields are read as strings before
    explicit conversion; M49 and CPC codes keep their leading zeros. The leading
@@ -112,6 +114,52 @@ and items carry `ex:cpcCode` as strings. Areas may include aggregates and are
 not automatically equated with countries. The source's `YEAR_CODE` is retained
 in DuckDB; `YEAR` defines the RDF time dimension.
 
+## Area-to-country links
+
+The loader consumes the archived FAOSTAT geographic definitions retrieved on
+15 October 2026, revision 1. These are global definitions, separate from the
+QCL 2025 observations. The [source and policy record](ontop/faostat-geographic-definitions.meta.md)
+contains original FAO URLs, exact artifact URLs, hashes and derivation rules.
+The artifact repository is a temporary retrieval location. To migrate it,
+set `GEOGRAPHIC_DEFINITIONS_BASE_URL` to the replacement directory containing
+the same artifact filenames. Existing nonempty downloads are reused.
+
+`faostat_country_definition` retains the source concordance;
+`faostat_area_membership` retains every source member row. The keyed
+`faostat_area_country` table exposes distinct country links as
+`ex:hasCountry`, using TiVA's shared `https://example.org/country/{ISO3}` IRIs.
+It adds no descriptions to those country resources. A country-code index
+supports reverse lookups:
+
+```sparql
+PREFIX ex: <https://example.org/faostat/vocab/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?area ?label WHERE {
+  ?area ex:hasCountry <https://example.org/country/CAN> ;
+        skos:prefLabel ?label .
+}
+```
+
+This includes Canada's own area and source-listed groups containing Canada.
+TiVA and FAOSTAT currently have different predicate namespaces; their country
+object IRIs are shared. Area concepts remain the QCL code list.
+
+Explicitly ended historical areas and non-country identifiers are excluded.
+Four additional source-code exceptions are documented in the policy record.
+China's aggregate (351) receives no inferred country expansion; mainland China,
+Hong Kong, Macao and Taiwan retain separate source identities. Inspect the SQL
+tables `faostat_area_country_unresolved` and `faostat_area_member_exclusion`
+for omissions; all original source definitions remain available.
+
+Group memberships describe the retrieved classification, not the year of each
+observation. They do not allocate aggregate values to countries; summing a
+regional value repeated through a country-membership join would overcount.
+
+**Upgrade:** stop Ontop, remove `run/faostat.duckdb.complete`, and rebuild using
+the reload commands above. The completion marker is manual; old databases do
+not automatically acquire these tables. `docker compose run --rm load` also
+runs the fetch dependency to obtain any missing definition files.
+
 ## Queries
 
 Count observations:
@@ -168,8 +216,8 @@ SELECT ?label ?m49 WHERE {
 - `tests/test_duckdb_shell.sh`: real image/loader smoke test.
 
 The declared key must remain unique for any replacement dataset. Consolidating
-the vocabulary namespace and adding explicit links from area concepts to external
-geographies remain open work, as in TiVA. All column-based literals use explicit
+the vocabulary namespace and resolving the explicitly audited area omissions
+remain open work. All column-based literals use explicit
 RDF datatypes. Debug logging records SPARQL and reformulated SQL.
 
 ## Verified snapshot
@@ -247,10 +295,12 @@ python3 -m unittest discover -s tests -v
 sh tests/test_duckdb_shell.sh
 ```
 
-The five loader lifecycle tests need Python 3 only. Three SQL fixture tests also
+The five loader lifecycle tests need Python 3 only. Six SQL fixture tests also
 need a JDK and the downloaded `jdbc/duckdb_jdbc-1.5.6.0.jar` (or set
 `DUCKDB_JDBC_JAR`); they skip with an explicit reason if those are unavailable.
-They check zero/null values, lexical lookup columns, leading-zero codes,
+They check country identities/group links, historical and non-country exclusions,
+ISO3 conflicts and duplicate memberships, as well as zero/null values, lexical
+lookup columns, leading-zero codes,
 negative-key encoding, code-list coverage, indexes, repeat rebuilds, and rollback
 on duplicate fact keys or conflicting code-list labels. The shell smoke test
 requires Docker access and checks the published image and actual loader.
@@ -270,3 +320,24 @@ The deployed database was not replaced during these checks. Docker daemon
 access was unavailable, so the updated Ontop endpoint, generated SQL, numeric
 SPARQL filters/aggregates and image smoke test were not revalidated in this run.
 The earlier endpoint verification above describes the original mapping.
+
+## Geographic-link validation (15 October 2026)
+
+The revised loader was run against the full cached QCL source in a separate
+database, then served through Ontop 5.5.0 with the configured mapping,
+constraints and lens:
+
+- 4,209,110 source rows and 4,114,755 observations retained.
+- 374 country/region definitions and 2,551 membership rows retained.
+- 249 eligible country codes; 1,222 distinct area-to-country links across
+  236 of the 244 QCL areas (202 single-country areas and 34 groups).
+- Eight areas remain explicitly unresolved: seven historical areas and
+  China's aggregate (351).
+- EU27 yields 27 eligible countries from 30 raw member rows.
+- SPARQL link/observation totals match SQL; Canada's reverse lookup returns
+  Canada, World, Americas and Northern America. TWN remains separate;
+  historical and China-aggregate links are absent. The original zero-valued
+  Afghanistan sample is unchanged.
+- Decompressed downloads match the source provenance SHA-256 checksums.
+- All 11 loader/SQL tests, Compose configuration, shell syntax and the real
+  DuckDB image/loader smoke test passed.

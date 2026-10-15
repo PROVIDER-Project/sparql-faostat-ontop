@@ -46,6 +46,81 @@ FROM lexical;
 -- Include rows with null observation values, as the original mappings did.
 CREATE OR REPLACE TABLE faostat_area (AREA_CODE VARCHAR PRIMARY KEY, AREA VARCHAR, M49_CODE VARCHAR);
 INSERT INTO faostat_area SELECT DISTINCT AREA_CODE_LEXICAL, AREA, M49_CODE FROM faostat WHERE AREA_CODE IS NOT NULL;
+-- Preserve the official 20261015 definitions as strings, including leading
+-- zero M49 codes and source-specific ISO-like aggregate identifiers.
+CREATE OR REPLACE TABLE faostat_country_definition (
+    AREA_CODE VARCHAR PRIMARY KEY, AREA VARCHAR NOT NULL, M49_CODE VARCHAR,
+    ISO2_CODE VARCHAR, ISO3_CODE VARCHAR, START_YEAR INTEGER, END_YEAR INTEGER
+);
+INSERT INTO faostat_country_definition
+SELECT "Country Code", "Country", "M49 Code", "ISO2 Code", "ISO3 Code",
+       CAST("Start Year" AS INTEGER), CAST("End Year" AS INTEGER)
+FROM read_csv('/data/country-region.csv.zst', header=true, all_varchar=true);
+
+CREATE OR REPLACE TABLE faostat_area_membership (
+    AREA_CODE VARCHAR, AREA VARCHAR NOT NULL, GROUP_M49_CODE VARCHAR,
+    MEMBER_CODE VARCHAR, MEMBER_AREA VARCHAR NOT NULL, M49_CODE VARCHAR,
+    ISO2_CODE VARCHAR, ISO3_CODE VARCHAR,
+    PRIMARY KEY (AREA_CODE, MEMBER_CODE)
+);
+INSERT INTO faostat_area_membership
+SELECT "Country Group Code", "Country Group", "Group M49 Code",
+       "Country Code", "Country", "M49 Code", "ISO2 Code", "ISO3 Code"
+FROM read_csv('/data/country-group-membership.csv.zst', header=true, all_varchar=true);
+
+-- Reject inconsistent ISO3 concordances rather than choosing one silently.
+SELECT CASE WHEN count(*) = 0 THEN true ELSE error('Conflicting geographic ISO3 definitions') END
+FROM faostat_area_membership m JOIN faostat_country_definition c ON m.MEMBER_CODE = c.AREA_CODE
+WHERE m.ISO3_CODE IS DISTINCT FROM c.ISO3_CODE;
+
+-- Source definitions with no end year and a three-letter alphabetic ISO3.
+-- Four source entries still have obsolete/non-ISO identifiers despite missing
+-- end years: CHA (Channel Islands), JTN, MID, WAK. Do not mint countries for
+-- them. TWN is retained as a separately coded statistical economy, as in TiVA.
+-- Policy and source references: faostat-geographic-definitions.meta.md.
+CREATE OR REPLACE TABLE faostat_country (
+    AREA_CODE VARCHAR PRIMARY KEY, COUNTRY_CODE VARCHAR NOT NULL UNIQUE
+);
+INSERT INTO faostat_country
+SELECT c.AREA_CODE, c.ISO3_CODE FROM faostat_country_definition c
+WHERE regexp_full_match(c.ISO3_CODE, '[A-Z]{3}') AND c.END_YEAR IS NULL
+  AND c.AREA_CODE NOT IN ('259', '111', '139', '242')
+  AND NOT EXISTS (SELECT 1 FROM faostat_area_membership m WHERE m.AREA_CODE = c.AREA_CODE);
+
+-- Memberships in this source are already flat. A geographic area receives
+-- its verified single-country link or its source-listed eligible members.
+-- Keep dataset area concepts scoped to the fact table (including null values).
+CREATE OR REPLACE TABLE faostat_area_country (
+    AREA_CODE VARCHAR, COUNTRY_CODE VARCHAR,
+    PRIMARY KEY (AREA_CODE, COUNTRY_CODE)
+);
+INSERT INTO faostat_area_country
+SELECT a.AREA_CODE, c.COUNTRY_CODE
+FROM faostat_area a JOIN faostat_country c ON a.AREA_CODE = c.AREA_CODE
+UNION
+SELECT a.AREA_CODE, c.COUNTRY_CODE
+FROM faostat_area a JOIN faostat_area_membership m ON a.AREA_CODE = m.AREA_CODE
+JOIN faostat_country c ON m.MEMBER_CODE = c.AREA_CODE;
+CREATE INDEX faostat_area_country_country_code_idx ON faostat_area_country (COUNTRY_CODE);
+
+-- Keep omissions inspectable in SQL instead of inventing successor-country,
+-- sovereign-state or China-aggregate expansions.
+CREATE OR REPLACE TABLE faostat_area_country_unresolved AS
+SELECT a.AREA_CODE, a.AREA,
+       CASE WHEN c.AREA_CODE IS NULL THEN 'missing_definition'
+            WHEN c.END_YEAR IS NOT NULL THEN 'historical_area'
+            ELSE 'no_eligible_country_or_membership' END AS REASON
+FROM faostat_area a LEFT JOIN faostat_country_definition c ON a.AREA_CODE = c.AREA_CODE
+WHERE NOT EXISTS (SELECT 1 FROM faostat_area_country ac WHERE ac.AREA_CODE = a.AREA_CODE);
+CREATE OR REPLACE TABLE faostat_area_member_exclusion AS
+SELECT m.AREA_CODE, m.MEMBER_CODE, m.MEMBER_AREA, m.ISO3_CODE,
+       CASE WHEN c.AREA_CODE IS NULL THEN 'missing_definition'
+            WHEN c.END_YEAR IS NOT NULL THEN 'historical_area'
+            ELSE 'non_country_identifier' END AS REASON
+FROM faostat_area_membership m JOIN faostat_area a ON a.AREA_CODE = m.AREA_CODE
+LEFT JOIN faostat_country_definition c ON c.AREA_CODE = m.MEMBER_CODE
+WHERE NOT EXISTS (SELECT 1 FROM faostat_country eligible WHERE eligible.AREA_CODE = m.MEMBER_CODE);
+
 CREATE OR REPLACE TABLE faostat_item (ITEM_CODE VARCHAR PRIMARY KEY, ITEM VARCHAR, CPC_CODE VARCHAR);
 INSERT INTO faostat_item SELECT DISTINCT ITEM_CODE_LEXICAL, ITEM, CPC_CODE FROM faostat WHERE ITEM_CODE IS NOT NULL;
 CREATE OR REPLACE TABLE faostat_element (ELEMENT_CODE VARCHAR PRIMARY KEY, ELEMENT VARCHAR);

@@ -4,3 +4,8 @@ faostat_item:ITEM_CODE
 faostat_element:ELEMENT_CODE
 faostat_unit:UNIT
 faostat_flag:FLAG
+faostat_country_definition:AREA_CODE
+faostat_area_membership:AREA_CODE,MEMBER_CODE
+faostat_country:AREA_CODE
+faostat_country:COUNTRY_CODE
+faostat_area_country:AREA_CODE,COUNTRY_CODE

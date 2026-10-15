@@ -16,7 +16,25 @@ services:
           curl -fL --retry 3 -o "$$jar.part" "https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar"
           mv "$$jar.part" "$$jar"
         fi
+        # Override the mirror location when these archived files migrate.
+        definitions_base="$${GEOGRAPHIC_DEFINITIONS_BASE_URL%/}"
+        for entry in country-region.csv.zst country-group-membership.csv.zst; do
+          target="/data/$$entry"
+          if [ ! -s "$$target" ]; then
+            curl -fL --retry 3 -o "$$target.part" "$$definitions_base/geographic-definitions-20261015-1-$$entry"
+            mv "$$target.part" "$$target"
+          fi
+        done
+        for entry in provenance.json readme.md; do
+          target="/data/geographic-definitions-$$entry"
+          if [ ! -s "$$target" ]; then
+            curl -fL --retry 3 -o "$$target.part" "$$definitions_base/geographic-definitions-20261015-1-$$entry"
+            mv "$$target.part" "$$target"
+          fi
+        done
         echo "fetch: ready"
+    environment:
+      GEOGRAPHIC_DEFINITIONS_BASE_URL: "${GEOGRAPHIC_DEFINITIONS_BASE_URL:-https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1}"
     volumes:
       - ./data:/data
       - ./jdbc:/jdbc

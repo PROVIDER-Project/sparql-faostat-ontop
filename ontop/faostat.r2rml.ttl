@@ -52,6 +52,14 @@
     rr:predicateObjectMap [ rr:predicate ex:m49Code ; rr:objectMap [ rr:column "M49_CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ] ] .
 
 
+# Shared country IRIs match TiVA. Descriptive country triples belong to the
+# separate country dataset; membership is for discovery, not value allocation.
+<https://example.org/faostat/mapping/area-countries> a rr:TriplesMap ;
+    rr:logicalTable [ rr:tableName "faostat_area_country" ] ;
+    rr:subjectMap [ rr:template "https://example.org/faostat/area/{AREA_CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [ rr:predicate ex:hasCountry ; rr:objectMap [ rr:template "https://example.org/country/{COUNTRY_CODE}" ; rr:termType rr:IRI ] ] .
+
+
 <https://example.org/faostat/mapping/area-scheme> a rr:TriplesMap ;
     rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
     rr:subjectMap [ rr:constant <https://example.org/faostat/scheme/area> ] ;
