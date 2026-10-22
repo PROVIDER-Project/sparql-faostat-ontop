@@ -1,0 +1,391 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.aksw.data.config</groupId>
+    <artifactId>aksw-data-deployment</artifactId>
+    <version>0.0.8</version>
+  </parent>
+  <groupId>org.aksw.data.faostat</groupId>
+  <artifactId>faostat-qcl-2025-duckdb</artifactId>
+  <version>0.0.1</version>
+  <packaging>pom</packaging>
+
+  <name>PROVIDER - FAOSTAT QCL 2025 preloaded DuckDB</name>
+  <description>
+    A Zstandard-compressed, preloaded DuckDB database derived from the FAOSTAT
+    Production: Crops and livestock products (QCL) 2025 snapshot, with FAOSTAT
+    Country/Region and Country Group definitions retrieved on 15 October 2026.
+
+    Produced by the PROVIDER FAOSTAT-to-SPARQL project:
+    https://github.com/PROVIDER-Project/sparql-faostat-ontop
+    The database supports that project's Ontop R2RML mappings and virtual
+    QB/SDMX graph; RDF is not materialized in this artifact.
+
+    Transformations include typed CSV ingestion, normalization of spreadsheet
+    quoting in M49/CPC codes while retaining leading zeros, derived observation
+    lookup keys, deduplicated code lists, lookup indexes, and geographic
+    area-to-country links with audit tables. Country-link eligibility and
+    exclusions follow the policy documented in the project repository.
+    The generated database is compressed losslessly as a duckdb.zst artifact.
+
+    Source: https://www.fao.org/faostat/en/#data/QCL
+    Geographic definitions: https://www.fao.org/faostat/en/#definitions
+
+    Attribution: FAO. 2025. FAOSTAT: Production: Crops and livestock products.
+    [Accessed on 10 October 2026]. https://www.fao.org/faostat/en/#data/QCL.
+    Licence: CC-BY-4.0.
+    FAO. FAOSTAT: Definitions and Standards, Country/Region and Country Group.
+    [Accessed on 15 October 2026]. https://www.fao.org/faostat/en/#definitions.
+    Licence: CC-BY-4.0.
+
+    This is a transformed data product of the PROVIDER project. FAO does not
+    sponsor, approve or endorse this artifact or its derived country links.
+  </description>
+  <url>https://github.com/PROVIDER-Project/sparql-faostat-ontop</url>
+  <inceptionYear>2026</inceptionYear>
+
+  <organization>
+    <name>PROVIDER Project</name>
+    <url>https://github.com/PROVIDER-Project</url>
+  </organization>
+  <developers>
+    <developer>
+      <name>Claus Stadler</name>
+    </developer>
+  </developers>
+
+  <licenses>
+    <license>
+      <name>Creative Commons Attribution 4.0 International (CC BY 4.0)</name>
+      <url>https://creativecommons.org/licenses/by/4.0/</url>
+      <distribution>repo</distribution>
+      <comments>
+        The generated FAOSTAT data artifact is distributed under CC BY 4.0.
+        FAO permits adaptation and redistribution of its statistical datasets,
+        subject to the licence and the FAO Statistical Database Terms of Use:
+        https://www.fao.org/contact-us/terms/db-terms-of-use/en/
+        Retain source attribution and licence notices, and identify changes.
+        FAO's additional terms on promotional uses, endorsement, accurate
+        representation and any third-party exceptions remain applicable.
+        No additional restrictions are imposed by this artifact's producer.
+
+        Source citations and transformation details are given in the description
+        and in https://github.com/PROVIDER-Project/sparql-faostat-ontop .
+        This licence entry covers the published data artifact. Software and
+        external projects retain their respective licensing terms.
+      </comments>
+    </license>
+  </licenses>
+
+  <scm>
+    <connection>scm:git:https://github.com/PROVIDER-Project/sparql-faostat-ontop.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/PROVIDER-Project/sparql-faostat-ontop.git</developerConnection>
+    <tag>HEAD</tag>
+    <url>https://github.com/PROVIDER-Project/sparql-faostat-ontop</url>
+  </scm>
+  <issueManagement>
+    <system>GitHub</system>
+    <url>https://github.com/PROVIDER-Project/sparql-faostat-ontop/issues</url>
+  </issueManagement>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Latest stable plugin releases checked on 2026-10-22. -->
+    <docker-maven-plugin.version>0.49.0</docker-maven-plugin.version>
+    <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
+    <build-helper-maven-plugin.version>3.6.2</build-helper-maven-plugin.version>
+    <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
+    <maven-install-plugin.version>3.2.0</maven-install-plugin.version>
+    <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
+
+    <data.repository.url>https://maven.inf-ai.duckdns.org/releases</data.repository.url>
+    <source.groupId>org.aksw.data.thirdparty.org.fao.faostat</source.groupId>
+    <qcl.artifactId>Production_Crops_Livestock_E_All_Data_Normalized-2025</qcl.artifactId>
+    <qcl.version>1</qcl.version>
+    <qcl.classifier>Production_Crops_Livestock_E_All_Data_Normalized</qcl.classifier>
+    <geography.artifactId>geographic-definitions-20261015</geography.artifactId>
+    <geography.version>1</geography.version>
+
+    <!-- Match Compose/JDBC; upgrading the database engine is a separate change. -->
+    <duckdb.image>aksw/duckdb-shell:1.5.6</duckdb.image>
+    <generator.image>datagen-${project.artifactId}:${project.version}</generator.image>
+    <generator.timeout>1800000</generator.timeout>
+    <compressor.base.image>debian:bookworm-slim</compressor.base.image>
+    <compressor.image>compress-${project.artifactId}:${project.version}</compressor.image>
+    <compressor.timeout>600000</compressor.timeout>
+    <zstd.level>6</zstd.level>
+    <zstd.threads>2</zstd.threads>
+    <!-- Docker 29+ requires API >= 1.44. Override for another daemon if needed. -->
+    <docker.apiVersion>1.44</docker.apiVersion>
+    <docker.showLogs>true</docker.showLogs>
+    <input.directory>${project.build.directory}/inputs</input.directory>
+    <database.filename>faostat.duckdb</database.filename>
+    <output.filename>${database.filename}.zst</output.filename>
+    <output.path>${project.build.directory}/${output.filename}</output.path>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>aksw-data-releases</id>
+      <url>${data.repository.url}</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+  </repositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>${maven-clean-plugin.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-install-plugin</artifactId>
+        <version>${maven-install-plugin.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <version>${maven-deploy-plugin.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>${build-helper-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>attach-preloaded-database</id>
+            <phase>package</phase>
+            <goals><goal>attach-artifact</goal></goals>
+            <configuration>
+              <artifacts>
+                <artifact>
+                  <file>${output.path}</file>
+                  <type>duckdb.zst</type>
+                </artifact>
+              </artifacts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>generate-data</id>
+      <!-- Same opt-out as the reference: attaching an existing output still works. -->
+      <activation>
+        <property><name>skipGenerateData</name><value>!true</value></property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <version>${maven-dependency-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>resolve-input-snapshots</id>
+                <phase>generate-resources</phase>
+                <goals><goal>copy</goal></goals>
+                <configuration>
+                  <outputDirectory>${input.directory}</outputDirectory>
+                  <artifactItems>
+                    <artifactItem>
+                      <groupId>${source.groupId}</groupId>
+                      <artifactId>${qcl.artifactId}</artifactId>
+                      <version>${qcl.version}</version>
+                      <type>csv.zst</type>
+                      <classifier>${qcl.classifier}</classifier>
+                      <destFileName>FAOSTAT.csv.zst</destFileName>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>${source.groupId}</groupId>
+                      <artifactId>${geography.artifactId}</artifactId>
+                      <version>${geography.version}</version>
+                      <type>csv.zst</type>
+                      <classifier>country-region</classifier>
+                      <destFileName>country-region.csv.zst</destFileName>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>${source.groupId}</groupId>
+                      <artifactId>${geography.artifactId}</artifactId>
+                      <version>${geography.version}</version>
+                      <type>csv.zst</type>
+                      <classifier>country-group-membership</classifier>
+                      <destFileName>country-group-membership.csv.zst</destFileName>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>${source.groupId}</groupId>
+                      <artifactId>${geography.artifactId}</artifactId>
+                      <version>${geography.version}</version>
+                      <type>json</type>
+                      <classifier>provenance</classifier>
+                      <destFileName>geographic-definitions-provenance.json</destFileName>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>${source.groupId}</groupId>
+                      <artifactId>${geography.artifactId}</artifactId>
+                      <version>${geography.version}</version>
+                      <type>md</type>
+                      <classifier>readme</classifier>
+                      <destFileName>geographic-definitions-readme.md</destFileName>
+                    </artifactItem>
+                  </artifactItems>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>io.fabric8</groupId>
+            <artifactId>docker-maven-plugin</artifactId>
+            <version>${docker-maven-plugin.version}</version>
+            <configuration>
+              <!-- Anonymous output volume is removed after both containers stop. -->
+              <removeVolumes>true</removeVolumes>
+              <images>
+                <image>
+                  <alias>faostat-generator</alias>
+                  <name>${generator.image}</name>
+                  <build>
+                    <from>${duckdb.image}</from>
+                    <!-- Only explicit inputs and loader sources enter the image. -->
+                    <assembly>
+                      <targetDir>/</targetDir>
+                      <exportTargetDir>false</exportTargetDir>
+                      <inline>
+                        <fileSets>
+                          <fileSet>
+                            <directory>${input.directory}</directory>
+                            <outputDirectory>data</outputDirectory>
+                            <includes>
+                              <include>FAOSTAT.csv.zst</include>
+                              <include>country-region.csv.zst</include>
+                              <include>country-group-membership.csv.zst</include>
+                              <include>geographic-definitions-provenance.json</include>
+                              <include>geographic-definitions-readme.md</include>
+                            </includes>
+                          </fileSet>
+                        </fileSets>
+                        <files>
+                          <file>
+                            <source>${project.basedir}/ontop/load.sql</source>
+                            <outputDirectory>opt/ontop/input</outputDirectory>
+                          </file>
+                          <file>
+                            <source>${project.basedir}/loader/load-duckdb.sh</source>
+                            <outputDirectory>opt/loader</outputDirectory>
+                          </file>
+                        </files>
+                      </inline>
+                    </assembly>
+                    <runCmds><run>mkdir -p /output</run></runCmds>
+                    <volumes><volume>/output</volume></volumes>
+                    <entryPoint>
+                      <exec>
+                        <arg>/bin/sh</arg>
+                        <arg>/opt/loader/load-duckdb.sh</arg>
+                      </exec>
+                    </entryPoint>
+                    <cmd>
+                      <exec>
+                        <arg>/output/${database.filename}</arg>
+                        <arg>/opt/ontop/input/load.sql</arg>
+                      </exec>
+                    </cmd>
+                  </build>
+                  <run>
+                    <!-- Wait for commit/close before the compressor starts. -->
+                    <wait><time>${generator.timeout}</time><exit>0</exit></wait>
+                  </run>
+                </image>
+                <image>
+                  <alias>faostat-compressor</alias>
+                  <name>${compressor.image}</name>
+                  <build>
+                    <from>${compressor.base.image}</from>
+                    <assembly>
+                      <targetDir>/opt/compressor</targetDir>
+                      <exportTargetDir>false</exportTargetDir>
+                      <inline>
+                        <files>
+                          <file>
+                            <source>${project.basedir}/loader/compress-duckdb.sh</source>
+                          </file>
+                        </files>
+                      </inline>
+                    </assembly>
+                    <runCmds>
+                      <run>apt-get update &amp;&amp; apt-get install -y --no-install-recommends zstd &amp;&amp; rm -rf /var/lib/apt/lists/*</run>
+                    </runCmds>
+                    <entryPoint>
+                      <exec>
+                        <arg>/bin/sh</arg>
+                        <arg>/opt/compressor/compress-duckdb.sh</arg>
+                      </exec>
+                    </entryPoint>
+                    <cmd>
+                      <exec>
+                        <arg>/output/${database.filename}</arg>
+                        <arg>/output/${output.filename}</arg>
+                        <arg>${zstd.level}</arg>
+                        <arg>${zstd.threads}</arg>
+                      </exec>
+                    </cmd>
+                  </build>
+                  <run>
+                    <!-- The previous execution has waited for DuckDB to exit. -->
+                    <!-- Use the earlier execution's container ID, not an alias dependency
+                         that would require starting the generator again here. -->
+                    <volumes><from><image>${docker.container.faostat-generator.id}</image></from></volumes>
+                    <wait><time>${compressor.timeout}</time><exit>0</exit></wait>
+                  </run>
+                  <copy>
+                    <entries>
+                      <entry>
+                        <containerPath>/output/${output.filename}</containerPath>
+                        <hostDirectory>${project.build.directory}</hostDirectory>
+                      </entry>
+                    </entries>
+                  </copy>
+                </image>
+              </images>
+            </configuration>
+            <executions>
+              <execution>
+                <id>generate-preloaded-database</id>
+                <phase>process-resources</phase>
+                <goals>
+                  <goal>build</goal>
+                  <goal>start</goal>
+                </goals>
+                <configuration><filter>faostat-generator</filter></configuration>
+              </execution>
+              <execution>
+                <id>compress-preloaded-database</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>build</goal>
+                  <goal>start</goal>
+                  <goal>copy</goal>
+                </goals>
+                <configuration><filter>faostat-compressor</filter></configuration>
+              </execution>
+              <execution>
+                <id>remove-build-containers</id>
+                <phase>prepare-package</phase>
+                <goals><goal>stop</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

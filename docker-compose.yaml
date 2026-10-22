@@ -1,75 +1,10 @@
 services:
-  fetch:
-    image: curlimages/curl:8.10.1
-    user: "0"
-    entrypoint: ["sh", "-c"]
-    command:
-      - |
-        set -eu
-        zst=/data/FAOSTAT.csv.zst
-        jar=/jdbc/duckdb_jdbc-1.5.6.0.jar
-        if [ ! -s "$$zst" ]; then
-          curl -fL --retry 3 -o "$$zst.part" "https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/Production_Crops_Livestock_E_All_Data_Normalized-2025/1/Production_Crops_Livestock_E_All_Data_Normalized-2025-1-Production_Crops_Livestock_E_All_Data_Normalized.csv.zst"
-          mv "$$zst.part" "$$zst"
-        fi
-        if [ ! -s "$$jar" ]; then
-          curl -fL --retry 3 -o "$$jar.part" "https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar"
-          mv "$$jar.part" "$$jar"
-        fi
-        # Override the mirror location when these archived files migrate.
-        definitions_base="$${GEOGRAPHIC_DEFINITIONS_BASE_URL%/}"
-        for entry in country-region.csv.zst country-group-membership.csv.zst; do
-          target="/data/$$entry"
-          if [ ! -s "$$target" ]; then
-            curl -fL --retry 3 -o "$$target.part" "$$definitions_base/geographic-definitions-20261015-1-$$entry"
-            mv "$$target.part" "$$target"
-          fi
-        done
-        for entry in provenance.json readme.md; do
-          target="/data/geographic-definitions-$$entry"
-          if [ ! -s "$$target" ]; then
-            curl -fL --retry 3 -o "$$target.part" "$$definitions_base/geographic-definitions-20261015-1-$$entry"
-            mv "$$target.part" "$$target"
-          fi
-        done
-        echo "fetch: ready"
-    environment:
-      GEOGRAPHIC_DEFINITIONS_BASE_URL: "${GEOGRAPHIC_DEFINITIONS_BASE_URL:-https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1}"
-    volumes:
-      - ./data:/data
-      - ./jdbc:/jdbc
-
-  load:
-    image: aksw/duckdb-shell:1.5.6
-    entrypoint: ["/bin/sh", "/opt/loader/load-duckdb.sh"]
-    depends_on:
-      fetch:
-        condition: service_completed_successfully
-    working_dir: /workspace
-    command:
-      - faostat.duckdb
-      - /opt/ontop/input/load.sql
-    volumes:
-      - ./loader:/opt/loader:ro
-      - ./data:/data:ro
-      - ./run:/workspace
-      - ./ontop:/opt/ontop/input:ro
-
   ontop:
-    image: ontop/ontop:5.5.0
+    image: ${FAOSTAT_IMAGE:-provider/sparql-faostat-ontop:0.0.1}
+    build:
+      context: .
     restart: unless-stopped
-    depends_on:
-      load:
-        condition: service_completed_successfully
     ports:
       - "${ONTOP_PORT:-8081}:8080"
     environment:
-      ONTOP_LOG_LEVEL: "debug"
-      ONTOP_MAPPING_FILE: /opt/ontop/input/faostat.r2rml.ttl
-      ONTOP_PROPERTIES_FILE: /opt/ontop/input/faostat.properties
-      ONTOP_CONSTRAINT_FILE: /opt/ontop/input/faostat-constraints.lst
-      ONTOP_LENSES_FILE: /opt/ontop/input/faostat-lenses.json
-    volumes:
-      - ./ontop:/opt/ontop/input:ro
-      - ./jdbc:/opt/ontop/jdbc:ro
-      - ./run:/data:ro
+      ONTOP_LOG_LEVEL: ${ONTOP_LOG_LEVEL:-debug}

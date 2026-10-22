@@ -4,3 +4,6 @@ run/
 jdbc/
 
 __pycache__/
+
+# Maven generated inputs, image context and preloaded database
+target/

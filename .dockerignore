@@ -1,0 +1,10 @@
+# Only endpoint configuration and attribution enter the build context.
+**
+!Dockerfile
+!README.md
+!ontop/
+!ontop/faostat.r2rml.ttl
+!ontop/faostat.properties
+!ontop/faostat-constraints.lst
+!ontop/faostat-lenses.json
+!ontop/faostat-geographic-definitions.meta.md
