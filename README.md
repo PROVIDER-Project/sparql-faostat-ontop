@@ -48,6 +48,27 @@ The build context is an explicit `.dockerignore` allowlist. Cached source data,
 local databases, JDBC downloads, Maven outputs and Git metadata are excluded.
 Changing mappings or properties requires rebuilding the endpoint image.
 
+The Dockerfile puts the database in the first added runtime layer (`data-base`),
+then adds JDBC (`endpoint-base`), followed by mappings, configuration, attribution
+and endpoint labels (`endpoint`). Database and driver downloads use independent
+build stages. Mapping-only variants reuse the shared data/runtime layers when
+built from the same base and artifact inputs. Changing a driver does not invalidate
+the database download or its runtime layer.
+
+For exact reuse across downstream repositories, publish the `endpoint-base`
+target once and derive customized images from that image, ideally pinned by digest:
+
+```bash
+docker build --target endpoint-base -t provider/faostat-ontop-base:0.0.1 .
+```
+
+This target contains Ontop, the database, JDBC and checksum sidecars; a derived
+image must add mappings/properties/lenses/constraints and set the corresponding
+`ONTOP_*_FILE` variables. It is a customization base, not a ready endpoint.
+Alternatively, `data-base` contains Ontop plus just the database and its checksum.
+Layer sharing assumes identical base-image and filesystem-layer contents; independently
+recreating downloads on another builder is not a guarantee of identical layer digests.
+
 ### Published input and upgrades
 
 Database release:
@@ -89,6 +110,33 @@ country links. Fixed-subject values and literal datatypes, leading-zero codes,
 and read-only database permissions passed. Downloaded Maven `.sha1` sidecars
 are verified before decompression. The existing deployed endpoint was not
 replaced during these isolated checks.
+
+## Kubernetes with Helm
+
+The shared chart in the sibling `helm-charts/charts/ontop` directory
+deploys the baked endpoint as a Deployment and Service, with
+optional Ingress, startup/readiness/liveness probes and resource settings.
+Each replica serves its own read-only image snapshot. There are no PVCs or
+runtime download/ingestion Jobs. The chart supplies writable ephemeral `/tmp`
+storage for JDBC native libraries and DuckDB query spill files.
+
+```bash
+docker compose build
+# Publish the image to a cluster-accessible registry or load it into local nodes.
+helm upgrade --install faostat ../helm-charts/charts/ontop \
+  -f ../helm-charts/examples/faostat.yaml \
+  --namespace provider --create-namespace --wait --timeout 5m
+helm test faostat --namespace provider --logs
+```
+
+The FAOSTAT example selects `provider/sparql-faostat-ontop:0.0.1`; registry and
+digest overrides, local Kind loading, Ingress/TLS examples and runtime settings
+are documented in [the shared chart README](../helm-charts/charts/ontop/README.md).
+
+The chart was validated in a temporary Kind cluster: installation, Helm test,
+Service queries, scaling to two replicas and rollback passed. Ingress/TLS
+manifests passed API-server dry-run validation. Chart rendering tests now live
+in the sibling `helm-charts` repository.
 
 ## Build a preloaded database with Maven
 
@@ -382,6 +430,7 @@ SELECT ?label ?m49 WHERE {
 ## Files and open work
 
 - `pom.xml`: Docker-backed generator and attached preloaded DuckDB Maven artifact.
+- `../helm-charts`: shared Helm chart and rendering tests for baked endpoints.
 - `Dockerfile`: verified published database/JDBC downloads and baked Ontop endpoint.
 - `.dockerignore`: minimal endpoint image build context.
 - `docker-compose.yaml`: single-service release endpoint.
