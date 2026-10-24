@@ -7,3 +7,6 @@ __pycache__/
 
 # Maven generated inputs, image context and preloaded database
 target/
+
+# Archived experiments and obsolete runtime caches
+/trash/

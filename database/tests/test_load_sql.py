@@ -1,6 +1,6 @@
 """Real DuckDB SQL checks using the existing JDBC jar; no Docker required.
 
-Set DUCKDB_JDBC_JAR to override jdbc/duckdb_jdbc-1.5.6.0.jar.
+Set DUCKDB_JDBC_JAR to override database/target/test-dependencies/duckdb_jdbc-1.5.6.0.jar.
 """
 import csv
 import os
@@ -11,11 +11,11 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-JAR = Path(os.environ.get('DUCKDB_JDBC_JAR', ROOT / 'jdbc/duckdb_jdbc-1.5.6.0.jar'))
+JAR = Path(os.environ.get('DUCKDB_JDBC_JAR', ROOT / 'target/test-dependencies/duckdb_jdbc-1.5.6.0.jar'))
 
 
 @unittest.skipUnless(JAR.is_file() and shutil.which('java') and shutil.which('javac'),
-                     'Requires a JDK and the DuckDB JDBC jar (fetch service or DUCKDB_JDBC_JAR)')
+                     'Requires a JDK and Maven-resolved test JDBC jar (see database/README.md or DUCKDB_JDBC_JAR)')
 class LoadSqlTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -35,7 +35,7 @@ class LoadSqlTests(unittest.TestCase):
         self.load = self.root / 'load.sql'
         self.definitions = self.root / 'country-region.csv'
         self.memberships = self.root / 'country-group-membership.csv'
-        sql = (ROOT / 'ontop/load.sql').read_text()
+        sql = (ROOT / 'load.sql').read_text()
         for source, target in [('/data/FAOSTAT.csv.zst', self.csv),
                                ('/data/country-region.csv.zst', self.definitions),
                                ('/data/country-group-membership.csv.zst', self.memberships)]:

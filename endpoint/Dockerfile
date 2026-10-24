@@ -1,4 +1,5 @@
 # Download/extraction tools stay in this stage; only verified artifacts are copied.
+ARG ENDPOINT_VERSION=0.0.1
 ARG FAOSTAT_VERSION=0.0.1
 ARG DUCKDB_JDBC_VERSION=1.5.6.0
 FROM debian:bookworm-slim AS download-tools
@@ -43,6 +44,7 @@ COPY --from=jdbc --chown=ontop:ontop /artifacts/duckdb_jdbc.jar.sha1 /opt/ontop/
 
 # Small endpoint-specific layers follow all shared data/runtime layers.
 FROM endpoint-base AS endpoint
+ARG ENDPOINT_VERSION
 
 COPY --chown=ontop:ontop ontop/faostat.r2rml.ttl ontop/faostat.properties ontop/faostat-constraints.lst ontop/faostat-lenses.json /opt/ontop/input/
 COPY --chown=ontop:ontop README.md ontop/faostat-geographic-definitions.meta.md /opt/ontop/input/
@@ -59,7 +61,7 @@ ARG DUCKDB_JDBC_VERSION
 LABEL org.opencontainers.image.title="PROVIDER FAOSTAT SPARQL endpoint" \
       org.opencontainers.image.source="https://github.com/PROVIDER-Project/sparql-faostat-ontop" \
       org.opencontainers.image.description="Ontop endpoint with a preloaded FAOSTAT QCL 2025 database" \
-      org.opencontainers.image.version="${FAOSTAT_VERSION}" \
+      org.opencontainers.image.version="${ENDPOINT_VERSION}" \
       org.aksw.faostat.artifact.version="${FAOSTAT_VERSION}" \
       org.aksw.faostat.artifact.checksum.algorithm="SHA-1" \
       org.aksw.faostat.data.license="https://creativecommons.org/licenses/by/4.0/" \

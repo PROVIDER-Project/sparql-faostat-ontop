@@ -10,15 +10,14 @@
 - Browser CSV exports were used; the APIs require the website's guest authentication.
 - Mirror coordinates: `org.aksw.data.thirdparty.org.fao.faostat:geographic-definitions-20261015:1`.
 - This mirror is a temporary retrieval location, not a public service commitment.
-  Override `GEOGRAPHIC_DEFINITIONS_BASE_URL` on the Compose fetch service when
-  migrating the same artifact; clear the affected cached definitions first.
+  Override Maven's `data.repository.url` when migrating the input artifacts.
 - POM: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1/geographic-definitions-20261015-1.pom
 - Country/Region: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1/geographic-definitions-20261015-1-country-region.csv.zst
 - Country Group: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1/geographic-definitions-20261015-1-country-group-membership.csv.zst
 - Provenance: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1/geographic-definitions-20261015-1-provenance.json
 - Source README: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/geographic-definitions-20261015/1/geographic-definitions-20261015-1-readme.md
-- The fetch service caches the two CSV.zst files and their provenance/README in
-  `data/`. The compressed files decompress byte-for-byte to the original CSVs.
+- The Maven database build stages the two CSV.zst files and their provenance/README
+  in `database/target/inputs/`. The compressed files decompress byte-for-byte to the original CSVs.
   The attached provenance uses the original uncompressed filenames and hashes.
 
 ## Content identity
@@ -30,7 +29,7 @@
 
 ## Derivation
 
-`ontop/load.sql` retains all 374 concordance rows in
+`database/load.sql` retains all 374 concordance rows in
 `faostat_country_definition` and all 2,551 membership rows (55 groups) in
 `faostat_area_membership`. Column identifiers and M49 values remain strings;
 validity years are nullable integers. Primary keys reject duplicate source

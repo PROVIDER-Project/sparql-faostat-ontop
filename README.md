@@ -1,289 +1,103 @@
 # FAOSTAT over SPARQL (Ontop)
 
-Serve the FAOSTAT **Production: Crops and livestock products** (QCL) 2025
-snapshot as a virtual QB/SDMX data cube. Ontop rewrites SPARQL into SQL
-against DuckDB; RDF is not materialized.
+Serve the FAOSTAT Production: Crops and livestock products (QCL) 2025 snapshot
+as a virtual QB/SDMX data cube. Ontop rewrites SPARQL into SQL over DuckDB;
+RDF is not materialized.
 
-The default Docker image includes published preloaded database release **0.0.1**,
-DuckDB JDBC 1.5.6.0, matching mappings/lenses/constraints and source attribution.
-Database download, checksum verification and decompression happen during the
-image build. Starting the endpoint needs no data downloads or ingestion.
+The two release steps are independent:
 
-## Start the release endpoint
+- [`database/`](database/README.md): Maven generates and publishes a versioned
+  `.duckdb.zst` artifact from pinned source data.
+- [`endpoint/`](endpoint/README.md): Docker downloads a published database,
+  verifies its Maven checksum, and packages it with JDBC and mappings. Its
+  Makefile provides local build/test and GHCR publishing commands.
 
-Requires Docker and Docker Compose with image-build support. Allow space for the
-uncompressed database (about 859 MiB), JDBC/runtime and build cache. Although the
-published database is about 120 MiB compressed, the final image stores the
-expanded DuckDB file.
+## Build and publish the database
 
-```bash
-docker compose up -d --build --remove-orphans
+```sh
+cd database
+mvn package
+# Set a new release version before publishing; configure credentials in Maven settings.
+mvn deploy -DaltDeploymentRepository=aksw-data-releases::https://maven.inf-ai.duckdns.org/releases
 ```
 
-The single `ontop` service serves `http://localhost:8081/sparql`. Override the host
-port with `ONTOP_PORT=8091 docker compose up -d --build --remove-orphans`.
-`--remove-orphans` removes the former stopped `fetch`/`load` service containers
-when switching an existing checkout. Files in `data/`, `jdbc/` and `run/` are
-retained, but the default endpoint uses the database and configuration baked
-into its image. It has no host bind mounts.
+Existing release coordinates:
+`org.aksw.data.faostat:faostat-qcl-2025-duckdb:duckdb.zst:0.0.1`.
+The output is `database/target/faostat.duckdb.zst`. Publishing an endpoint does
+not generate or publish a database. Keep published release versions immutable.
 
-`Dockerfile` builds two stages:
+## Build or publish the endpoint
 
-1. A disposable Debian stage downloads the published database and the pinned
-   JDBC driver with their `.sha1` sidecars, verifies both SHA-1 checksums,
-   and decompresses the database.
-   Download failures, checksum mismatches or corrupt archives fail the build.
-2. The final stage uses `ontop/ontop:5.5.0`, with the verified database, JDBC jar,
-   matching R2RML/properties/constraints/lens files and attribution documents.
-   Download tools and the compressed archive stay out of the final image.
+From the repository root:
 
-The database file has mode `0444`; Ontop runs as its inherited non-root user and
-connects through read-only JDBC. The image inherits Ontop's healthcheck. Baked
-`ONTOP_*` defaults also support ordinary `docker run` use. Compose retains the
-configurable log level (`ONTOP_LOG_LEVEL`, default `debug`). Image labels record
-the database version, checksum algorithm and JDBC version. The downloaded
-`.sha1` sidecars are retained under `/opt/ontop/input/` for traceability.
-
-The build context is an explicit `.dockerignore` allowlist. Cached source data,
-local databases, JDBC downloads, Maven outputs and Git metadata are excluded.
-Changing mappings or properties requires rebuilding the endpoint image.
-
-The Dockerfile puts the database in the first added runtime layer (`data-base`),
-then adds JDBC (`endpoint-base`), followed by mappings, configuration, attribution
-and endpoint labels (`endpoint`). Database and driver downloads use independent
-build stages. Mapping-only variants reuse the shared data/runtime layers when
-built from the same base and artifact inputs. Changing a driver does not invalidate
-the database download or its runtime layer.
-
-For exact reuse across downstream repositories, publish the `endpoint-base`
-target once and derive customized images from that image, ideally pinned by digest:
-
-```bash
-docker build --target endpoint-base -t provider/faostat-ontop-base:0.0.1 .
+```sh
+make -C endpoint help
+make -C endpoint build
+make -C endpoint up
+# Once authenticated, explicitly publish the image:
+make -C endpoint login GHCR_USER=YOUR_GITHUB_USERNAME
+make -C endpoint publish
 ```
 
-This target contains Ontop, the database, JDBC and checksum sidecars; a derived
-image must add mappings/properties/lenses/constraints and set the corresponding
-`ONTOP_*_FILE` variables. It is a customization base, not a ready endpoint.
-Alternatively, `data-base` contains Ontop plus just the database and its checksum.
-Layer sharing assumes identical base-image and filesystem-layer contents; independently
-recreating downloads on another builder is not a guarantee of identical layer digests.
+The service is available at `http://localhost:8081/sparql`. The image contains
+the unpacked database and starts without data downloads, bind mounts or loading.
+Images built locally use a registry-qualified name; that does not publish them.
 
-### Published input and upgrades
+Set endpoint and database versions independently:
 
-Database release:
-
-[faostat-qcl-2025-duckdb-0.0.1.duckdb.zst](https://maven.inf-ai.duckdns.org/releases/org/aksw/data/faostat/faostat-qcl-2025-duckdb/0.0.1/faostat-qcl-2025-duckdb-0.0.1.duckdb.zst)
-
-The build obtains checksums by appending `.sha1` to each Maven download URL.
-The database checksum is provided by
-[its Maven sidecar](https://maven.inf-ai.duckdns.org/releases/org/aksw/data/faostat/faostat-qcl-2025-duckdb/0.0.1/faostat-qcl-2025-duckdb-0.0.1.duckdb.zst.sha1);
-the JDBC download uses the same convention. Neither checksum is hard-coded.
-Artifact and checksum download failures or mismatches fail the build.
-
-For a new release, update the database version and use its matching mapping files.
-Defaults are pinned to the release above; no changing
-`SNAPSHOT` or latest-version resolution occurs. The repository URL is separately
-overridable with `--build-arg FAOSTAT_REPOSITORY_URL=...` if the mirror migrates.
-An explicit override build could use:
-
-```bash
-FAOSTAT_IMAGE=provider/sparql-faostat-ontop:0.0.2 docker compose build \
-  --build-arg FAOSTAT_VERSION=0.0.2
-FAOSTAT_IMAGE=provider/sparql-faostat-ontop:0.0.2 \
-  docker compose up -d --no-build --remove-orphans
+```sh
+make -C endpoint build VERSION=0.0.2 DATABASE_VERSION=0.0.1
 ```
 
-Changing either `FAOSTAT_VERSION` or `DUCKDB_JDBC_VERSION` selects the artifact
-and its matching Maven checksum automatically. Keep JDBC compatible with the
-database's DuckDB version. The Dockerfile currently constructs standard Maven
-repository URLs; a future Maven Resolver/CLI integration can resolve coordinates
-if repository layout or resolution requirements change. Publish each data
-revision under a new immutable Maven release version and endpoint image tag.
+A new database must be published before an endpoint build can download it.
+Mappings/configuration come from this Git checkout and are baked into the image.
+No local-archive fallback or implicit data generation is used.
 
-### Endpoint image validation (22 October 2026)
-
-The release image built successfully from the published artifact and passed all
-20 loader/SQL/compression/endpoint tests. The endpoint started with networking
-disabled and no host bind mounts, returning 4,114,755 observations and 1,222
-country links. Fixed-subject values and literal datatypes, leading-zero codes,
-and read-only database permissions passed. Downloaded Maven `.sha1` sidecars
-are verified before decompression. The existing deployed endpoint was not
-replaced during these isolated checks.
-
-## Kubernetes with Helm
-
-The shared chart in the sibling `helm-charts/charts/ontop` directory
-deploys the baked endpoint as a Deployment and Service, with
-optional Ingress, startup/readiness/liveness probes and resource settings.
-Each replica serves its own read-only image snapshot. There are no PVCs or
-runtime download/ingestion Jobs. The chart supplies writable ephemeral `/tmp`
-storage for JDBC native libraries and DuckDB query spill files.
-
-```bash
-docker compose build
-# Publish the image to a cluster-accessible registry or load it into local nodes.
-helm upgrade --install faostat ../helm-charts/charts/ontop \
-  -f ../helm-charts/examples/faostat.yaml \
-  --namespace provider --create-namespace --wait --timeout 5m
-helm test faostat --namespace provider --logs
-```
-
-The FAOSTAT example selects `provider/sparql-faostat-ontop:0.0.1`; registry and
-digest overrides, local Kind loading, Ingress/TLS examples and runtime settings
-are documented in [the shared chart README](../helm-charts/charts/ontop/README.md).
-
-The chart was validated in a temporary Kind cluster: installation, Helm test,
-Service queries, scaling to two replicas and rollback passed. Ingress/TLS
-manifests passed API-server dry-run validation. Chart rendering tests now live
-in the sibling `helm-charts` repository.
-
-## Build a preloaded database with Maven
-
-`pom.xml` builds the database artifact from the pinned source CSVs, including geographic
-links, audit tables, code lists and lookup indexes, then compresses it with zstd
-in a separate Docker Maven Plugin execution. The
-[reference generator POM](https://gitlab.com/coypu-project/data-sources/-/blob/main/disasters-with-archive/generator/pom.xml?ref_type=heads)
-provides the build/run/copy/attach pattern. The POM inherits the shared AKSW
-data-deployment parent. Public source downloads need no credentials.
-
-Requirements: Maven 3.6.3+ on JDK 8+ and access to a Docker daemon (API 1.44+ by
-default). Host-side DuckDB and zstd installations are unnecessary for the build.
-Run from this repository:
-
-```bash
-mvn clean package
-```
-
-The published output is `target/faostat.duckdb.zst`, attached with type
-`duckdb.zst` and no classifier. The uncompressed database stays on a temporary
-Docker volume; only the smaller, verified archive is copied to the Maven host.
-No endpoint is started and the existing `run/faostat.duckdb` is not changed.
-The build uses no host bind mounts, so the Docker daemon can be remote.
-
-The default `generate-data` profile runs these steps:
-
-1. At `generate-resources`, `maven-dependency-plugin:copy` resolves pinned QCL
-   2025 and geographic definition artifacts into `target/inputs/`: three
-   compressed CSV files, geographic provenance JSON and the source README.
-   Maven caches the immutable release inputs in its local repository; the
-   existing Compose `data/` cache is independent.
-2. At `process-resources`, `generate-preloaded-database` builds and runs a
-   generator based on `aksw/duckdb-shell:1.5.6`, using the existing SQL and
-   loader. It writes `faostat.duckdb` into an anonymous Docker volume at
-   `/output`, and Maven waits for successful DuckDB commit and process exit.
-3. At `prepare-package`, `compress-preloaded-database` builds and runs a
-   separate compressor image. It installs Debian's zstd package on
-   `debian:bookworm-slim`; no changes to `duckdb-shell` are required. The
-   compressor imports the completed generator's volume by container ID,
-   compresses to a `.part` file with a content checksum, runs `zstd --test`,
-   and renames the checked archive to `faostat.duckdb.zst`. Compression and
-   integrity-check failures fail Maven before output extraction/attachment.
-4. `docker:copy` extracts only the archive. A cleanup execution stops/removes
-   both containers and removes their anonymous output volume. Generator and
-   compressor images remain cached; neither image contains a preloaded database.
-5. At `package`, `build-helper-maven-plugin:attach-artifact` attaches the
-   compressed file for Maven installation or deployment.
-
-Each normal generation uses fresh containers and the current SQL. Compose's
-completion-marker guard still applies to Compose runs; an old `run/` marker
-cannot skip Maven generation. `mvn clean` removes `target/`, including staged
-inputs and the archive, while preserving Compose data and Maven's local cache.
-
-The published release coordinates are:
+## Repository layout
 
 ```text
-org.aksw.data.faostat:faostat-qcl-2025-duckdb:duckdb.zst:0.0.1
+database/pom.xml          Database generation, compression and Maven publication
+database/load.sql         Tables, code lists, lookup columns, indexes and geography
+database/loader/          Load completion guard and atomic zstd compression
+database/tests/           Loader, SQL and compression checks
+endpoint/Dockerfile       Published artifact/JDBC downloads; data layers first
+endpoint/ontop/           Mappings, properties, lenses, constraints and attribution
+endpoint/Makefile         Self-documenting build, test and GHCR convenience targets
+endpoint/docker-compose.yaml   Local service lifecycle
+endpoint/tests/           Real endpoint integration checks
 ```
 
-To install an already generated archive without running Docker again:
+Superseded caches, the two-module Maven experiment and the source-loading
+Compose workflow are archived under ignored `trash/`. The active database
+build writes to `database/target/`; the endpoint uses Docker's build cache.
+Legacy runtime folders are archived under `trash/` as well. Neither active
+component depends on them. SQL fixture tests resolve their own JDBC jar into
+`database/target/test-dependencies/` through Maven; see the database README.
+The separately maintained Helm chart is in the sibling `helm-charts`
+repository. Select the published endpoint image using chart values; the chart
+needs no database build logic. [Chart documentation](../helm-charts/charts/ontop/README.md).
 
-```bash
-mvn -DskipGenerateData=true install
+## Tests
+
+```sh
+python3 -m unittest discover -s database/tests -v
+make -C endpoint test
 ```
 
-Do not combine this with `clean`: it requires the existing
-`target/faostat.duckdb.zst`. Publication inherits the parent POM deployment
-defaults; configure the intended repository and credentials for your release.
-The build does not push its internal images.
+The database SQL fixture checks need a JDK and JDBC jar (`DUCKDB_JDBC_JAR`);
+loader/compression checks need Python and, for compression, zstd. Endpoint
+checks build the selected image and query an isolated container with no network
+or host mounts. Historical setup and validation notes are archived locally
+under `trash/docs/`.
 
-Consumers must decompress before opening DuckDB or starting Ontop. For a local
-copy (requires the zstd CLI and space for the expanded database):
+## Layout validation (24 October 2026)
 
-```bash
-zstd --test target/faostat.duckdb.zst
-zstd --decompress --keep target/faostat.duckdb.zst
-```
-
-This produces `target/faostat.duckdb` and retains the archive. The endpoint
-Dockerfile downloads and decompresses the published artifact during its build.
-
-Settings can be overridden with Maven properties, for example:
-
-```bash
-mvn clean package -Dzstd.level=3 -Dzstd.threads=2
-mvn clean package -Dgenerator.timeout=3600000 -Dcompressor.timeout=900000
-mvn clean package -Ddata.repository.url=https://example.org/maven/releases
-```
-
-The default compression level is 6 with two worker threads. Timeouts are in
-milliseconds: 30 minutes for generation and 10 minutes for compression. The
-`duckdb.image`, `compressor.base.image`, `generator.image` and `compressor.image`
-properties control the images independently. Keep DuckDB aligned with JDBC when
-upgrading. SQL expects the current pinned input schemas. Override
-`data.repository.url` with a repository serving the same artifact coordinates
-when the mirror migrates; Compose's environment variable is independent.
-
-If a build fails or is interrupted, run `mvn docker:stop` to remove any remaining
-generator/compressor containers and their anonymous volumes before retrying.
-Completed archives in `target/` are removed by `mvn clean`.
-
-Plugin releases were checked on 22 October 2026 against Maven Central metadata:
-Docker Maven Plugin **0.49.0**, Dependency **3.11.0**, Build Helper **3.6.2**,
-Clean **3.5.0**, Install **3.2.0**, and Deploy **3.2.0**. Core plugins use stable
-Maven 3 releases. See the [Docker Maven Plugin manual](https://dmp.fabric8.io/)
-and [Build Helper attach-artifact documentation](https://www.mojohaus.org/build-helper-maven-plugin/attach-artifact-mojo.html).
-
-Validated on 22 October 2026: the two-execution Maven build and subsequent
-`mvn -DskipGenerateData=true install` succeeded. With zstd level 6 and two
-workers, the 900,214,784-byte database became a 125,515,511-byte archive
-(858.51 MiB → 119.70 MiB). Archive integrity testing and decompression passed;
-the decompressed database retained 4,209,110 source rows, 4,114,755 observations,
-1,222 geographic links and the original zero-valued sample. Both build
-containers and their shared volume were removed. All 15 Python/SQL/compression
-tests passed. The deployed endpoint and database were not changed.
-
-## Development: load directly from source
-
-`docker-compose.source.yaml` preserves the original `fetch` → `load` → `ontop`
-workflow for source/mapping development. Select it explicitly:
-
-```bash
-docker compose -f docker-compose.source.yaml up -d
-```
-
-It downloads cached QCL/geographic CSVs and JDBC into `data/` and `jdbc/`, builds
-`run/faostat.duckdb` with `ontop/load.sql`, and mounts that database and the
-local mapping files into Ontop. Downloads use `.part` files and rename only
-on success. The loader skips opening DuckDB when a nonempty database and its
-`.complete` marker already exist. Failed loads leave no marker; stale markers
-with a missing/empty database trigger loading again. The marker is manual:
-source, SQL and mapping changes do not automatically invalidate it.
-
-Stop any endpoint using `run/faostat.duckdb` before rebuilding it:
-
-```bash
-docker compose -f docker-compose.source.yaml stop ontop
-rm -f ./run/faostat.duckdb.complete
-docker compose -f docker-compose.source.yaml run --rm load && \
-  docker compose -f docker-compose.source.yaml up -d --no-deps --force-recreate ontop
-```
-
-This source workflow and the default baked-image workflow use the same default
-host port. Use a separate Compose project and `ONTOP_PORT` when running both
-at once. Source-workflow caches and markers do not affect the default release
-image. `GEOGRAPHIC_DEFINITIONS_BASE_URL` applies to the source fetch service;
-Maven and the endpoint Docker build have their own repository settings.
+The relocated Maven database build completed successfully. All 15 database
+checks, five real endpoint checks, and three Makefile orchestration checks
+passed. Both Compose files validated, including independent endpoint/database
+versions and a custom host port. Publishing was dry-run only; no deployed
+service was restarted. The earlier Maven reactor experiment and source-loading Compose workflow have
+subsequently been archived under `trash/`.
 
 ## Source and attribution
 
@@ -342,7 +156,7 @@ in DuckDB; `YEAR` defines the RDF time dimension.
 
 The loader consumes the archived FAOSTAT geographic definitions retrieved on
 15 October 2026, revision 1. These are global definitions, separate from the
-QCL 2025 observations. The [source and policy record](ontop/faostat-geographic-definitions.meta.md)
+QCL 2025 observations. The [source and policy record](endpoint/ontop/faostat-geographic-definitions.meta.md)
 contains original FAO URLs, exact artifact URLs, hashes and derivation rules.
 The artifact repository is a temporary retrieval location. To migrate it,
 set `GEOGRAPHIC_DEFINITIONS_BASE_URL` to the replacement directory containing
@@ -426,171 +240,3 @@ SELECT ?label ?m49 WHERE {
   <https://example.org/faostat/area/2> skos:prefLabel ?label ; ex:m49Code ?m49 .
 }
 ```
-
-## Files and open work
-
-- `pom.xml`: Docker-backed generator and attached preloaded DuckDB Maven artifact.
-- `../helm-charts`: shared Helm chart and rendering tests for baked endpoints.
-- `Dockerfile`: verified published database/JDBC downloads and baked Ontop endpoint.
-- `.dockerignore`: minimal endpoint image build context.
-- `docker-compose.yaml`: single-service release endpoint.
-- `docker-compose.source.yaml`: optional fetch/load/endpoint source workflow.
-- `tests/test_endpoint_image.py`: opt-in offline endpoint integration checks.
-- `ontop/faostat.r2rml.ttl`: observations, code lists and cube metadata.
-- `ontop/faostat.properties`: read-only JDBC, query logging and strict cardinality.
-- `ontop/faostat-constraints.lst`: fact composite key and code-list keys.
-- `ontop/faostat-lenses.json`: observation filter, composite/local-name keys and non-null declarations.
-- `ontop/load.sql`: transactional load, code lists, derived columns, indexes and statistics.
-- `loader/load-duckdb.sh`: completion marker, skip and retry behavior.
-- `loader/compress-duckdb.sh`: checked, atomic zstd archive creation for Maven.
-- `tests/test_compression.py`: round trips and failure cleanup (requires zstd).
-- `tests/test_loader.py`: loader lifecycle tests with a fake DuckDB executable.
-- `tests/test_load_sql.py` and `tests/DuckDbScripts.java`: real JDBC SQL fixture checks.
-- `tests/test_duckdb_shell.sh`: real image/loader smoke test.
-
-The declared key must remain unique for any replacement dataset. Consolidating
-the vocabulary namespace and resolving the explicitly audited area omissions
-remain open work. All column-based literals use explicit
-RDF datatypes. Debug logging records SPARQL and reformulated SQL.
-
-## Verified snapshot
-
-Verified on 10 October 2026 using the deployed artifact and the Compose stack:
-
-- 4,209,110 source rows covering 1961–2024; 4,114,755 non-null-value observations.
-- Composite key unique, with no missing key fields.
-- SPARQL observation count and a join across all required cube fields match DuckDB.
-- Sample Afghanistan/almonds/area harvested/1961 returns zero, unit `ha`, flag `A`.
-- M49 `004` and CPC `01371` retain leading zeros; year, value and note datatypes checked.
-- Dataset attribution/license, eight cube components and five concept schemes query correctly.
-- Atomic download behavior checked for failure, success and cache reuse.
-- Compose configuration valid; fetch/load completed successfully and Ontop reported healthy.
-
-The original, unindexed DuckDB file was approximately 51 MB for this snapshot.
-
-## Query planning and indexes
-
-Keep `ontop.cardinalityMode=STRICT`: RDF triples must be unique and SPARQL
-result multiplicities must be preserved. The `faostat_observations` BasicLens
-exposes the observation composite and local-name keys to Ontop. Unique indexes
-enforce the original fact key and observation local-name key in DuckDB; null
-subject components are filtered out by the lens. Code-list primary keys reject
-conflicting labels or secondary codes rather than picking one arbitrarily.
-The R2RML sources contain no `DISTINCT`; code lists are deduplicated during load.
-These keys remove the need to deduplicate those mapping sources on each query,
-but do not guarantee that every possible Ontop plan omits `DISTINCT`.
-
-Following TIVA, calculated lookup values are stored and indexed as ordinary
-columns rather than indexed expressions. DuckDB supports selective ART lookup
-scans on single-column indexes; composite and expression indexes are ineligible
-for those scans. See [DuckDB indexing](https://duckdb.org/docs/current/guides/performance/indexing).
-The loader builds nine single-column indexes after ingestion:
-
-- `OBSERVATION_LOCAL_NAME` for fixed observation subjects;
-- `AREA_CODE_LEXICAL`, `ITEM_CODE_LEXICAL`, `ELEMENT_CODE_LEXICAL` for dimension IRIs;
-- `YEAR_LEXICAL` for `xsd:gYear` objects;
-- `OBS_VALUE_LEXICAL` for exact `xsd:double` objects;
-- `UNIT`, `FLAG` and `NOTE` for their mapped objects.
-
-The tenth fact index is the composite unique index for integrity. Code-list
-primary keys already supply their indexes. Stored lexical columns avoid
-query-time casts in exact lookups. The original integer and double columns
-remain available for SQL analysis; mapped year, value, notation and note RDF
-datatypes are preserved. Numeric SPARQL filters and aggregates can still require
-casts of the lexical value. Common objects and unbound triple queries may scan
-many rows; indexes do not make whole-graph enumeration cheap.
-
-[Ontop lenses](https://ontop-vkg.org/guide/advanced/lenses) documents the key and
-non-null declarations used here. To inspect SQL without running a large query,
-start a temporary Ontop development endpoint with the new mapping, constraints
-and lens (adjust the JDBC path for a local CLI installation):
-
-```bash
-ontop endpoint --dev \
-  -m ontop/faostat.r2rml.ttl \
-  -p ontop/faostat.properties \
-  -c ontop/faostat-constraints.lst \
-  --lenses ontop/faostat-lenses.json
-
-curl -fsS 'http://localhost:8080/ontop/reformulate' \
-  --data-urlencode 'query=SELECT * WHERE { ?s ?p ?o } LIMIT 1000'
-```
-
-Check the reformulated SQL for unnecessary duplicate elimination and direct
-stored-column equalities. Use DuckDB `EXPLAIN` to inspect plans, or profiling on
-small selective queries to confirm actual index scans. Retain strict semantics;
-changing to `LOOSE` can affect counts, sums and limits.
-
-## Tests and updated snapshot validation
-
-To test a built release image as well as the loader/SQL/compression tests:
-
-```bash
-docker compose build
-FAOSTAT_ENDPOINT_IMAGE=provider/sparql-faostat-ontop:0.0.1 \
-  python3 -m unittest discover -s tests -v
-```
-
-The five image tests start a temporary container with networking disabled and no
-host bind mounts. They verify startup, observation and country-link counts,
-fixed-subject values/datatypes, leading-zero codes, and database read-only file
-permissions. The container is removed after testing. Without
-`FAOSTAT_ENDPOINT_IMAGE`, these tests skip explicitly. The fixture counts target
-release 0.0.1 and must be reviewed when adopting a different dataset release.
-
-
-```bash
-python3 -m unittest discover -s tests -v
-sh tests/test_duckdb_shell.sh
-```
-
-Four compression tests use the zstd CLI (and skip explicitly if it is absent);
-they check byte-for-byte round trips, replacement, invalid inputs and cleanup
-after compression or integrity-check failures.
-
-The five loader lifecycle tests need Python 3 only. Six SQL fixture tests also
-need a JDK and the downloaded `jdbc/duckdb_jdbc-1.5.6.0.jar` (or set
-`DUCKDB_JDBC_JAR`); they skip with an explicit reason if those are unavailable.
-They check country identities/group links, historical and non-country exclusions,
-ISO3 conflicts and duplicate memberships, as well as zero/null values, lexical
-lookup columns, leading-zero codes,
-negative-key encoding, code-list coverage, indexes, repeat rebuilds, and rollback
-on duplicate fact keys or conflicting code-list labels. The shell smoke test
-requires Docker access and checks the published image and actual loader.
-
-On 11 October 2026, the new SQL was tested with DuckDB JDBC 1.5.6.0 against the
-full cached source in a separate database:
-
-- 4,209,110 rows and 4,114,755 observations, matching the original snapshot;
-- 244 areas, 301 items, 14 elements, 10 units and 5 flags;
-- both unique indexes built successfully;
-- the Afghanistan/almonds/1961 sample retains value `0.0`, unit `ha`, flag `A`,
-  M49 `004` and CPC `01371`;
-- a lookup for `OBSERVATION_LOCAL_NAME='2-221-5312-1961'` used an index scan;
-- all eight Python/SQL tests, Compose configuration and shell syntax passed.
-
-The deployed database was not replaced during these checks. Docker daemon
-access was unavailable, so the updated Ontop endpoint, generated SQL, numeric
-SPARQL filters/aggregates and image smoke test were not revalidated in this run.
-The earlier endpoint verification above describes the original mapping.
-
-## Geographic-link validation (15 October 2026)
-
-The revised loader was run against the full cached QCL source in a separate
-database, then served through Ontop 5.5.0 with the configured mapping,
-constraints and lens:
-
-- 4,209,110 source rows and 4,114,755 observations retained.
-- 374 country/region definitions and 2,551 membership rows retained.
-- 249 eligible country codes; 1,222 distinct area-to-country links across
-  236 of the 244 QCL areas (202 single-country areas and 34 groups).
-- Eight areas remain explicitly unresolved: seven historical areas and
-  China's aggregate (351).
-- EU27 yields 27 eligible countries from 30 raw member rows.
-- SPARQL link/observation totals match SQL; Canada's reverse lookup returns
-  Canada, World, Americas and Northern America. TWN remains separate;
-  historical and China-aggregate links are absent. The original zero-valued
-  Afghanistan sample is unchanged.
-- Decompressed downloads match the source provenance SHA-256 checksums.
-- All 11 loader/SQL tests, Compose configuration, shell syntax and the real
-  DuckDB image/loader smoke test passed.

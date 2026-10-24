@@ -7,6 +7,7 @@
     <groupId>org.aksw.data.config</groupId>
     <artifactId>aksw-data-deployment</artifactId>
     <version>0.0.8</version>
+    <relativePath/>
   </parent>
   <groupId>org.aksw.data.faostat</groupId>
   <artifactId>faostat-qcl-2025-duckdb</artifactId>
@@ -129,12 +130,53 @@
 
   <repositories>
     <repository>
+      <id>central</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+      <releases><enabled>true</enabled><checksumPolicy>fail</checksumPolicy></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+    <repository>
       <id>aksw-data-releases</id>
       <url>${data.repository.url}</url>
       <releases><enabled>true</enabled></releases>
       <snapshots><enabled>false</enabled></snapshots>
     </repository>
+    <!-- These builds use Central and the data repository; disable inherited legacy repositories. -->
+    <repository>
+      <id>maven.aksw.internal</id>
+      <url>https://maven.aksw.org/repository/internal/</url>
+      <releases><enabled>false</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+    <repository>
+      <id>maven.aksw.snapshots</id>
+      <url>https://maven.aksw.org/repository/snapshots/</url>
+      <releases><enabled>false</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
   </repositories>
+
+  <pluginRepositories>
+    <pluginRepository>
+      <id>central</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </pluginRepository>
+    <!-- These builds use Central and the data repository; disable inherited legacy repositories. -->
+    <pluginRepository>
+      <id>maven.aksw.internal</id>
+      <url>https://maven.aksw.org/repository/internal/</url>
+      <releases><enabled>false</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </pluginRepository>
+    <pluginRepository>
+      <id>maven.aksw.snapshots</id>
+      <url>https://maven.aksw.org/repository/snapshots/</url>
+      <releases><enabled>false</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </pluginRepository>
+  </pluginRepositories>
 
   <build>
     <plugins>
@@ -275,7 +317,7 @@
                         </fileSets>
                         <files>
                           <file>
-                            <source>${project.basedir}/ontop/load.sql</source>
+                            <source>${project.basedir}/load.sql</source>
                             <outputDirectory>opt/ontop/input</outputDirectory>
                           </file>
                           <file>
