@@ -1,8 +1,9 @@
 # FAOSTAT Ontop endpoint
 
 A self-contained Ontop image built from a published FAOSTAT database artifact.
-The database is downloaded, checksum-verified and decompressed during image
-build. Starting a container requires no database download or ingestion.
+A temporary Maven container resolves the database from local/remote repositories
+before Docker packaging. The Dockerfile decompresses it into the image; starting
+a container requires no database download or ingestion.
 
 Run `make help` in this folder for available targets. GNU Make, Docker with
 BuildKit/Compose, and Python 3 for endpoint tests are required. Allow space for
@@ -40,15 +41,83 @@ make show-config
 | `DUCKDB_JDBC_VERSION` | `1.5.6.0` | JDBC release, compatible with the database |
 | `REPOSITORY` | `ghcr.io/provider-project/sparql-faostat-ontop` | Image repository |
 | `IMAGE` | `$(REPOSITORY):$(VERSION)` | Full image reference override |
-| `DATA_REPOSITORY_URL` | `https://maven.inf-ai.duckdns.org/releases` | Artifact repository |
+| `DATA_REPOSITORY_URL` | `https://maven.inf-ai.duckdns.org/releases` | Default Maven data repository |
 | `PORT` | `8081` | Compose host port |
 | `GHCR_USER` | empty | Personal GitHub username for registry login |
 
-`DATABASE_VERSION` selects the existing Maven layout:
-`org/aksw/data/faostat/faostat-qcl-2025-duckdb/VERSION/…-VERSION.duckdb.zst`.
-The Dockerfile fetches `.sha1` alongside database and JDBC downloads and checks
-both before adding artifacts to the image. Failures abort the build.
-There is no local archive mode or automatic invocation of the database module.
+`DATABASE_VERSION` selects the Maven artifact
+`org.aksw.data.faostat:faostat-qcl-2025-duckdb:VERSION:duckdb.zst`.
+The build uses standalone `dependency:copy` with pinned plugin version 3.11.0;
+no resolver POM is needed. JDBC is resolved independently through Maven too.
+Maven validates remote checksums; the image records SHA-1 digests of the resolved
+inputs under `/opt/ontop/input/` for traceability. There is no ad-hoc archive
+path fallback or automatic invocation of the database generator.
+
+## Build-time Maven configuration
+
+`make resolve` runs a disposable Maven container, using a writable Maven
+repository in `endpoint/.cache/maven/repository` by default. `make build` always
+runs resolution first, then builds the Dockerfile with the staged artifacts.
+Maven reuses locally installed/cached releases and downloads missing artifacts
+and plugin dependencies into that same project-local repository.
+
+Override `M2_DIR` through the environment, Make's command line or the optional
+gitignored `.env` file:
+
+```sh
+M2_DIR=/mnt/datasets/faostat-m2 make build
+make build M2_DIR=/mnt/datasets/faostat-m2
+# To use your normal Maven repository instead:
+make build M2_DIR="$HOME/.m2"
+cp .env.example .env
+```
+
+`M2_DIR` is the directory containing `repository/`, rather than the repository
+itself. The `.env` file uses Make assignment syntax (unquoted paths).
+Command-line assignments take precedence over `.env`, which takes precedence
+over inherited environment values. `ENV_FILE=/path/to/build.env` selects another
+configuration file. `make show-config` shows selected paths without file contents.
+
+Settings default independently to `$HOME/.m2/settings.xml` and
+`$HOME/.m2/settings-security.xml`. Existing files are mounted read-only into the
+helper container. Override them with `M2_SETTINGS` and `M2_SECURITY`; missing
+files are optional. Maven's user home is set to their mount directory so encrypted
+passwords can use `settings-security.xml`. These files never enter Docker's build
+context or image layers. Host environment variables referenced by settings are
+not implicitly forwarded.
+
+Global build settings supply the public FAOSTAT repository and Central; host user
+settings are merged by Maven, including mirrors, profiles and server credentials.
+The explicit repository override keeps downloaded datasets out of your normal
+Maven repository even when the host settings declare a different localRepository.
+
+The helper runs as your host UID/GID, leaving host-owned files, and is removed
+when it exits. `MAVEN_IMAGE` defaults to `maven:3.9.11-eclipse-temurin-17`.
+`MAVEN_OFFLINE=true` disables remote resolution once the cache contains all
+requested artifacts and Maven's plugin dependencies. Resolution runs on every
+build, so fresh local installs and changed settings are used without a BuildKit
+cache invalidation step. Avoid simultaneous builds sharing the same output folder.
+
+```text
+endpoint/.cache/maven/repository/   Persistent Maven cache (gitignored)
+endpoint/target/artifacts/         Resolved database/JDBC and SHA-1 sidecars (gitignored)
+```
+
+Docker still stores its images, layers and normal build cache in its configured
+storage; the large Maven downloads use the directory above. Neither Maven nor
+its cache/settings becomes part of the endpoint runtime. Delete `.cache/maven/`
+to clear Maven's downloads; delete `target/` to clear staged inputs.
+
+To use a locally installed database with this default project-local repository:
+
+```sh
+# From the repository root; install only after generating the desired release:
+mvn -f database/pom.xml -Dmaven.repo.local="$PWD/endpoint/.cache/maven/repository" install
+make -C endpoint build
+```
+
+Keep released artifact versions immutable. The endpoint build never implicitly
+runs the database generator or publishes a Maven artifact.
 
 ## Publish to GHCR
 
@@ -73,17 +142,23 @@ deployments can additionally pin the resulting registry digest.
 
 ## Docker and Compose directly
 
+The Dockerfile packages already resolved inputs. Resolve first, using matching
+versions when overriding the defaults:
+
 ```sh
+make resolve DATABASE_VERSION=0.0.1 DUCKDB_JDBC_VERSION=1.5.6.0
 docker build -t ghcr.io/provider-project/sparql-faostat-ontop:0.0.2 \
-  --build-arg ENDPOINT_VERSION=0.0.2 --build-arg FAOSTAT_VERSION=0.0.1 .
+  --build-arg ENDPOINT_VERSION=0.0.2 --build-arg FAOSTAT_VERSION=0.0.1 \
+  --build-arg DUCKDB_JDBC_VERSION=1.5.6.0 .
 docker compose config
 ```
 
-The Makefile runs from its own directory, so `make -C endpoint …` from the
-repository root and `make -f /absolute/path/to/endpoint/Makefile …` both work.
-`make up` passes its selected image, version build arguments and port to Compose.
-Direct Compose use can set `FAOSTAT_IMAGE`, `ENDPOINT_VERSION`, `FAOSTAT_VERSION`
-and `DUCKDB_JDBC_VERSION` in the environment.
+Direct `docker build` and `docker compose build` require those staged files;
+use `make build` for the complete workflow. The Makefile runs from its own
+directory, so `make -C endpoint …` from the repository root and
+`make -f /absolute/path/to/endpoint/Makefile …` both work.
+`make up` builds first, then passes the selected image and service configuration
+to Compose. M2 paths and settings are build inputs, not runtime configuration.
 
 ## Runtime and layers
 
@@ -96,8 +171,8 @@ Endpoint/data version labels are separate and come after the shared layers.
 Downstream variants can build/publish `endpoint-base` and derive from its digest
 for exact shared-base reuse. That target needs mappings and `ONTOP_*_FILE`
 settings before it can serve a dataset. Build tools and compressed inputs remain
-outside the final image. The `.dockerignore` allowlist excludes local caches and
-Maven output.
+outside the final image. The `.dockerignore` allowlist includes only the four staged artifact files
+and endpoint configuration/attribution; it excludes the Maven cache and settings.
 
 The shared chart is maintained under `../../helm-charts/charts/ontop`. Select
 `image.repository`, `image.tag` or `image.digest` in release values; image and

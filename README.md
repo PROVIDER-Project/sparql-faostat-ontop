@@ -8,8 +8,8 @@ The two release steps are independent:
 
 - [`database/`](database/README.md): Maven generates and publishes a versioned
   `.duckdb.zst` artifact from pinned source data.
-- [`endpoint/`](endpoint/README.md): Docker downloads a published database,
-  verifies its Maven checksum, and packages it with JDBC and mappings. Its
+- [`endpoint/`](endpoint/README.md): a temporary Maven container resolves a database
+  (local or remote) before Docker packaging and packages it with JDBC and mappings. Its
   Makefile provides local build/test and GHCR publishing commands.
 
 ## Build and publish the database
@@ -49,9 +49,13 @@ Set endpoint and database versions independently:
 make -C endpoint build VERSION=0.0.2 DATABASE_VERSION=0.0.1
 ```
 
-A new database must be published before an endpoint build can download it.
+A database can be installed into the selected host Maven repository or published
+remotely before building an endpoint. `M2_DIR` defaults to `endpoint/.cache/maven` and can be
+overridden through the environment, `endpoint/.env` or Make's command line.
+The host's settings and optional settings-security files are mounted read-only
+into the temporary resolver; they default independently to `$HOME/.m2`.
 Mappings/configuration come from this Git checkout and are baked into the image.
-No local-archive fallback or implicit data generation is used.
+No ad-hoc archive fallback or implicit data generation is used.
 
 ## Repository layout
 
@@ -60,7 +64,7 @@ database/pom.xml          Database generation, compression and Maven publication
 database/load.sql         Tables, code lists, lookup columns, indexes and geography
 database/loader/          Load completion guard and atomic zstd compression
 database/tests/           Loader, SQL and compression checks
-endpoint/Dockerfile       Published artifact/JDBC downloads; data layers first
+endpoint/Dockerfile       Maven-resolved data/JDBC inputs; data layers first
 endpoint/ontop/           Mappings, properties, lenses, constraints and attribution
 endpoint/Makefile         Self-documenting build, test and GHCR convenience targets
 endpoint/docker-compose.yaml   Local service lifecycle
@@ -69,7 +73,8 @@ endpoint/tests/           Real endpoint integration checks
 
 Superseded caches, the two-module Maven experiment and the source-loading
 Compose workflow are archived under ignored `trash/`. The active database
-build writes to `database/target/`; the endpoint uses Docker's build cache.
+build writes to `database/target/`; the endpoint stages inputs in `endpoint/target/artifacts/` and keeps its Maven
+repository in `endpoint/.cache/maven/repository/`. Docker layers use Docker storage.
 Legacy runtime folders are archived under `trash/` as well. Neither active
 component depends on them. SQL fixture tests resolve their own JDBC jar into
 `database/target/test-dependencies/` through Maven; see the database README.
@@ -92,12 +97,14 @@ under `trash/docs/`.
 
 ## Layout validation (24 October 2026)
 
-The relocated Maven database build completed successfully. All 15 database
-checks, five real endpoint checks, and three Makefile orchestration checks
-passed. Both Compose files validated, including independent endpoint/database
-versions and a custom host port. Publishing was dry-run only; no deployed
-service was restarted. The earlier Maven reactor experiment and source-loading Compose workflow have
-subsequently been archived under `trash/`.
+The relocated Maven database build and all 15 database checks passed in the
+previous layout validation. The current endpoint workflow passed seven Makefile
+orchestration checks and five real SPARQL/image checks. Its image was built with
+Maven offline from the project-local cache, including read-only settings/security
+mounts and an explicit cache override of settings.xml's localRepository. The
+cache was seeded with previously downloaded artifacts; the database matched the
+published checksum. Compose configuration also validated. No image was published
+and no deployed service was restarted. Superseded workflows remain in `trash/`.
 
 ## Source and attribution
 

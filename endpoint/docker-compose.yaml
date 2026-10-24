@@ -8,7 +8,6 @@ services:
         ENDPOINT_VERSION: ${ENDPOINT_VERSION:-0.0.1}
         FAOSTAT_VERSION: ${FAOSTAT_VERSION:-0.0.1}
         DUCKDB_JDBC_VERSION: ${DUCKDB_JDBC_VERSION:-1.5.6.0}
-        FAOSTAT_REPOSITORY_URL: ${FAOSTAT_REPOSITORY_URL:-https://maven.inf-ai.duckdns.org/releases}
     restart: unless-stopped
     ports:
       - "${ONTOP_PORT:-8081}:8080"

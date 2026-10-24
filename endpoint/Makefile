@@ -4,6 +4,9 @@ SHELL := /bin/sh
 .SHELLFLAGS := -eu -c
 
 ENDPOINT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+ENV_FILE ?= $(ENDPOINT_DIR)/.env
+-include $(ENV_FILE)
+
 DOCKER ?= docker
 PYTHON ?= python3
 VERSION ?= 0.0.1
@@ -14,30 +17,60 @@ IMAGE ?= $(REPOSITORY):$(VERSION)
 DATA_REPOSITORY_URL ?= https://maven.inf-ai.duckdns.org/releases
 PORT ?= 8081
 GHCR_USER ?=
+M2_DIR ?= $(ENDPOINT_DIR)/.cache/maven
+M2_SETTINGS ?= $(HOME)/.m2/settings.xml
+M2_SECURITY ?= $(HOME)/.m2/settings-security.xml
+ARTIFACT_DIR := $(ENDPOINT_DIR)/target/artifacts
+MAVEN_IMAGE ?= maven:3.9.11-eclipse-temurin-17
+MAVEN_OFFLINE ?= false
 
 COMPOSE = FAOSTAT_IMAGE="$(IMAGE)" ENDPOINT_VERSION="$(VERSION)" \
 	FAOSTAT_VERSION="$(DATABASE_VERSION)" DUCKDB_JDBC_VERSION="$(DUCKDB_JDBC_VERSION)" \
-	FAOSTAT_REPOSITORY_URL="$(DATA_REPOSITORY_URL)" ONTOP_PORT="$(PORT)" \
+	ONTOP_PORT="$(PORT)" \
 	$(DOCKER) compose --project-directory "$(ENDPOINT_DIR)" -f "$(ENDPOINT_DIR)/docker-compose.yaml"
 
-.PHONY: help show-config build check test login publish up down logs ps
+.PHONY: help show-config resolve build check test login publish up down logs ps
 
 help: ## Show available targets (the default)
 	@awk 'BEGIN { FS = ":.*## " } /^[[:alnum:]_.-]+:.*## / { printf "make %-24s # %s\n", $$1, $$2 }' "$(ENDPOINT_DIR)/Makefile"
-	printf '\nOverrides: VERSION DATABASE_VERSION DUCKDB_JDBC_VERSION REPOSITORY IMAGE PORT GHCR_USER\n'
+	printf '\nOverrides: VERSION DATABASE_VERSION DUCKDB_JDBC_VERSION REPOSITORY IMAGE PORT GHCR_USER M2_DIR M2_SETTINGS M2_SECURITY\n'
 
 show-config: ## Show the selected image, artifact versions and host port
 	@printf '%-22s %s\n' \
 		IMAGE "$(IMAGE)" VERSION "$(VERSION)" DATABASE_VERSION "$(DATABASE_VERSION)" \
-		DUCKDB_JDBC_VERSION "$(DUCKDB_JDBC_VERSION)" DATA_REPOSITORY_URL "$(DATA_REPOSITORY_URL)" PORT "$(PORT)"
+		DUCKDB_JDBC_VERSION "$(DUCKDB_JDBC_VERSION)" DATA_REPOSITORY_URL "$(DATA_REPOSITORY_URL)" PORT "$(PORT)" \
+		M2_DIR "$(M2_DIR)" M2_SETTINGS "$(M2_SETTINGS)" M2_SECURITY "$(M2_SECURITY)" \
+		MAVEN_IMAGE "$(MAVEN_IMAGE)" MAVEN_OFFLINE "$(MAVEN_OFFLINE)"
 
-build: ## Build the endpoint image from a published database release
+resolve: ## Resolve data/JDBC into target/artifacts using the project-local Maven cache
+	cd "$(ENDPOINT_DIR)"
+	mkdir -p "$(M2_DIR)/repository" "$(ARTIFACT_DIR)"
+	cache_dir=$$(cd "$(M2_DIR)" && pwd)
+	set --
+	if [ -f "$(M2_SETTINGS)" ]; then
+		set -- "$$@" --mount "type=bind,src=$(M2_SETTINGS),dst=/tmp/maven-home/.m2/settings.xml,readonly"
+	fi
+	if [ -f "$(M2_SECURITY)" ]; then
+		set -- "$$@" --mount "type=bind,src=$(M2_SECURITY),dst=/tmp/maven-home/.m2/settings-security.xml,readonly"
+	fi
+	$(DOCKER) run --rm --user "$$(id -u):$$(id -g)" \
+		--env HOME=/tmp/maven-home --env MAVEN_CONFIG=/tmp/maven-home/.m2 \
+		--env MAVEN_OPTS=-Duser.home=/tmp/maven-home \
+		--env FAOSTAT_REPOSITORY_URL="$(DATA_REPOSITORY_URL)" \
+		--env FAOSTAT_VERSION="$(DATABASE_VERSION)" \
+		--env DUCKDB_JDBC_VERSION="$(DUCKDB_JDBC_VERSION)" \
+		--env MAVEN_OFFLINE="$(MAVEN_OFFLINE)" \
+		--mount "type=bind,src=$$cache_dir/repository,dst=/maven-cache" \
+		--mount "type=bind,src=$(ARTIFACT_DIR),dst=/artifacts" \
+		--mount "type=bind,src=$(ENDPOINT_DIR)/build,dst=/opt/build,readonly" \
+		--workdir /tmp --entrypoint /bin/sh "$$@" "$(MAVEN_IMAGE)" /opt/build/resolve-all.sh
+
+build: resolve ## Resolve artifacts and build the endpoint image
 	cd "$(ENDPOINT_DIR)"
 	$(DOCKER) build --tag "$(IMAGE)" \
 		--build-arg ENDPOINT_VERSION="$(VERSION)" \
 		--build-arg FAOSTAT_VERSION="$(DATABASE_VERSION)" \
-		--build-arg DUCKDB_JDBC_VERSION="$(DUCKDB_JDBC_VERSION)" \
-		--build-arg FAOSTAT_REPOSITORY_URL="$(DATA_REPOSITORY_URL)" .
+		--build-arg DUCKDB_JDBC_VERSION="$(DUCKDB_JDBC_VERSION)" .
 
 check: ## Check Makefile orchestration without Docker or network access
 	cd "$(ENDPOINT_DIR)"

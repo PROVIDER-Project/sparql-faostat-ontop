@@ -137,7 +137,7 @@ existing generated archive, `mvn -DskipGenerateData=true install` or `deploy`
 attaches the existing `target/faostat.duckdb.zst` without regeneration; do not
 combine that mode with `clean`.
 
-The endpoint independently downloads a published release. Set its
+The endpoint independently resolves a host-installed or published release through Maven. Set its
 `DATABASE_VERSION` only when adopting a new artifact; publishing this database
 never rebuilds or redeploys the service.
 

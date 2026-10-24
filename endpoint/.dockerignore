@@ -1,4 +1,4 @@
-# Only endpoint configuration and attribution enter the build context.
+# Only resolved artifacts, endpoint configuration and attribution enter the build context.
 **
 !Dockerfile
 !README.md
@@ -8,3 +8,9 @@
 !ontop/faostat-constraints.lst
 !ontop/faostat-lenses.json
 !ontop/faostat-geographic-definitions.meta.md
+!target/
+!target/artifacts/
+!target/artifacts/faostat.duckdb.zst
+!target/artifacts/faostat.duckdb.zst.sha1
+!target/artifacts/duckdb_jdbc.jar
+!target/artifacts/duckdb_jdbc.jar.sha1

@@ -10,3 +10,9 @@ target/
 
 # Archived experiments and obsolete runtime caches
 /trash/
+
+# Local build configuration (may contain machine-specific paths)
+/endpoint/.env
+
+# Project-local Maven downloads
+/endpoint/.cache/
