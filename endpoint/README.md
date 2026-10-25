@@ -112,3 +112,7 @@ in an isolated container. Python 3 is required.
 
 See the [source attribution and licence](../README.md#sources-and-licence).
 Attribution and geographic provenance are also included in the image.
+
+Project material is [Apache-2.0 licensed](LICENSE). See [licensing notes](LICENSING.md)
+for third-party/data terms and the AI-assisted provenance of that information.
+The image includes these files under `/opt/ontop/licenses/`.

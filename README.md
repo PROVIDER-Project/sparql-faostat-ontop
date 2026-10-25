@@ -118,6 +118,10 @@ checks. Run `make -C endpoint check` for orchestration checks or
 
 ## Sources and licence
 
+Original project material is licensed under [Apache-2.0](LICENSE).
+[Licensing notes](LICENSING.md) distinguish third-party/data terms and declare
+that the information about those terms was derived with AI assistance.
+
 FAO. 2025. [FAOSTAT: Production: Crops and livestock products](https://www.fao.org/faostat/en/#data/QCL).
 Accessed 10 October 2026; geographic definitions accessed 15 October 2026.
 The transformed data artifact is distributed under

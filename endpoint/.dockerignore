@@ -14,3 +14,7 @@
 !target/artifacts/faostat.duckdb.zst.sha1
 !target/artifacts/duckdb_jdbc.jar
 !target/artifacts/duckdb_jdbc.jar.sha1
+!LICENSE
+!LICENSING.md
+!third-party/
+!third-party/duckdb-LICENSE

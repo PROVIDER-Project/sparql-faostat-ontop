@@ -29,6 +29,9 @@ COPY --chown=ontop:ontop target/artifacts/duckdb_jdbc.jar.sha1 /opt/ontop/input/
 FROM endpoint-base AS endpoint
 ARG ENDPOINT_VERSION
 
+COPY --chown=ontop:ontop LICENSE LICENSING.md /opt/ontop/licenses/
+COPY --chown=ontop:ontop third-party/ /opt/ontop/licenses/third-party/
+
 COPY --chown=ontop:ontop ontop/faostat.r2rml.ttl ontop/faostat.properties ontop/faostat-constraints.lst ontop/faostat-lenses.json /opt/ontop/input/
 COPY --chown=ontop:ontop README.md ontop/faostat-geographic-definitions.meta.md /opt/ontop/input/
 
