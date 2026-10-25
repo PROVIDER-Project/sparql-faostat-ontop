@@ -4,6 +4,14 @@ set -eu
 database=${1:-/workspace/faostat.duckdb}
 load_sql=${2:-/opt/ontop/input/load.sql}
 marker="${database}.complete"
+archive=${3:-${database}.zst}
+archive_marker="${archive}.completed"
+
+if [ -f "$archive_marker" ] && [ -s "$archive" ]; then
+    echo "load: archive already complete ($archive); skipping"
+    exit 0
+fi
+rm -f "$archive_marker"
 
 if [ -f "$marker" ] && [ -s "$database" ]; then
     echo "load: already complete ($database); skipping"

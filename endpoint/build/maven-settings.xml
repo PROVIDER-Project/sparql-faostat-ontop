@@ -29,6 +29,21 @@
         </pluginRepository>
       </pluginRepositories>
     </profile>
+    <!-- Activated only when Make mounts the database's local deployment. -->
+    <profile>
+      <id>local-database</id>
+      <activation>
+        <property><name>env.FAOSTAT_LOCAL_REPOSITORY</name><value>true</value></property>
+      </activation>
+      <repositories>
+        <repository>
+          <id>faostat-local-build</id>
+          <url>file:///database-repository</url>
+          <releases><enabled>true</enabled><checksumPolicy>fail</checksumPolicy></releases>
+          <snapshots><enabled>true</enabled><checksumPolicy>fail</checksumPolicy></snapshots>
+        </repository>
+      </repositories>
+    </profile>
   </profiles>
   <activeProfiles><activeProfile>faostat-image-build</activeProfile></activeProfiles>
 </settings>

@@ -94,6 +94,7 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <local.deployment.directory>${project.build.directory}/m2</local.deployment.directory>
     <!-- Latest stable plugin releases checked on 2026-10-22. -->
     <docker-maven-plugin.version>0.49.0</docker-maven-plugin.version>
     <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
@@ -112,7 +113,6 @@
 
     <!-- Match Compose/JDBC; upgrading the database engine is a separate change. -->
     <duckdb.image>aksw/duckdb-shell:1.5.6</duckdb.image>
-    <generator.image>datagen-${project.artifactId}:${project.version}</generator.image>
     <generator.timeout>1800000</generator.timeout>
     <compressor.base.image>debian:bookworm-slim</compressor.base.image>
     <compressor.image>compress-${project.artifactId}:${project.version}</compressor.image>
@@ -220,6 +220,21 @@
 
   <profiles>
     <profile>
+      <id>local</id>
+      <!-- Local publication is separate from Maven's dependency/plugin cache. -->
+      <properties><maven.install.skip>true</maven.install.skip></properties>
+      <distributionManagement>
+        <repository>
+          <id>faostat-local-build</id>
+          <url>file://${local.deployment.directory}</url>
+        </repository>
+        <snapshotRepository>
+          <id>faostat-local-build</id>
+          <url>file://${local.deployment.directory}</url>
+        </snapshotRepository>
+      </distributionManagement>
+    </profile>
+    <profile>
       <id>generate-data</id>
       <!-- Same opt-out as the reference: attaching an existing output still works. -->
       <activation>
@@ -289,60 +304,32 @@
             <artifactId>docker-maven-plugin</artifactId>
             <version>${docker-maven-plugin.version}</version>
             <configuration>
-              <!-- Anonymous output volume is removed after both containers stop. -->
-              <removeVolumes>true</removeVolumes>
               <images>
                 <image>
                   <alias>faostat-generator</alias>
-                  <name>${generator.image}</name>
-                  <build>
-                    <from>${duckdb.image}</from>
-                    <!-- Only explicit inputs and loader sources enter the image. -->
-                    <assembly>
-                      <targetDir>/</targetDir>
-                      <exportTargetDir>false</exportTargetDir>
-                      <inline>
-                        <fileSets>
-                          <fileSet>
-                            <directory>${input.directory}</directory>
-                            <outputDirectory>data</outputDirectory>
-                            <includes>
-                              <include>FAOSTAT.csv.zst</include>
-                              <include>country-region.csv.zst</include>
-                              <include>country-group-membership.csv.zst</include>
-                              <include>geographic-definitions-provenance.json</include>
-                              <include>geographic-definitions-readme.md</include>
-                            </includes>
-                          </fileSet>
-                        </fileSets>
-                        <files>
-                          <file>
-                            <source>${project.basedir}/load.sql</source>
-                            <outputDirectory>opt/ontop/input</outputDirectory>
-                          </file>
-                          <file>
-                            <source>${project.basedir}/loader/load-duckdb.sh</source>
-                            <outputDirectory>opt/loader</outputDirectory>
-                          </file>
-                        </files>
-                      </inline>
-                    </assembly>
-                    <runCmds><run>mkdir -p /output</run></runCmds>
-                    <volumes><volume>/output</volume></volumes>
-                    <entryPoint>
+                  <name>${duckdb.image}</name>
+                  <run>
+                    <entrypoint>
                       <exec>
                         <arg>/bin/sh</arg>
                         <arg>/opt/loader/load-duckdb.sh</arg>
                       </exec>
-                    </entryPoint>
+                    </entrypoint>
                     <cmd>
                       <exec>
                         <arg>/output/${database.filename}</arg>
                         <arg>/opt/ontop/input/load.sql</arg>
+                        <arg>/output/${output.filename}</arg>
                       </exec>
                     </cmd>
-                  </build>
-                  <run>
+                    <volumes>
+                      <bind>
+                        <volume>${project.build.directory}:/output</volume>
+                        <volume>${input.directory}:/data:ro</volume>
+                        <volume>${project.basedir}/load.sql:/opt/ontop/input/load.sql:ro</volume>
+                        <volume>${project.basedir}/loader:/opt/loader:ro</volume>
+                      </bind>
+                    </volumes>
                     <!-- Wait for commit/close before the compressor starts. -->
                     <wait><time>${generator.timeout}</time><exit>0</exit></wait>
                   </run>
@@ -352,17 +339,6 @@
                   <name>${compressor.image}</name>
                   <build>
                     <from>${compressor.base.image}</from>
-                    <assembly>
-                      <targetDir>/opt/compressor</targetDir>
-                      <exportTargetDir>false</exportTargetDir>
-                      <inline>
-                        <files>
-                          <file>
-                            <source>${project.basedir}/loader/compress-duckdb.sh</source>
-                          </file>
-                        </files>
-                      </inline>
-                    </assembly>
                     <runCmds>
                       <run>apt-get update &amp;&amp; apt-get install -y --no-install-recommends zstd &amp;&amp; rm -rf /var/lib/apt/lists/*</run>
                     </runCmds>
@@ -382,20 +358,14 @@
                     </cmd>
                   </build>
                   <run>
-                    <!-- The previous execution has waited for DuckDB to exit. -->
-                    <!-- Use the earlier execution's container ID, not an alias dependency
-                         that would require starting the generator again here. -->
-                    <volumes><from><image>${docker.container.faostat-generator.id}</image></from></volumes>
+                    <volumes>
+                      <bind>
+                        <volume>${project.build.directory}:/output</volume>
+                        <volume>${project.basedir}/loader:/opt/compressor:ro</volume>
+                      </bind>
+                    </volumes>
                     <wait><time>${compressor.timeout}</time><exit>0</exit></wait>
                   </run>
-                  <copy>
-                    <entries>
-                      <entry>
-                        <containerPath>/output/${output.filename}</containerPath>
-                        <hostDirectory>${project.build.directory}</hostDirectory>
-                      </entry>
-                    </entries>
-                  </copy>
                 </image>
               </images>
             </configuration>
@@ -404,7 +374,6 @@
                 <id>generate-preloaded-database</id>
                 <phase>process-resources</phase>
                 <goals>
-                  <goal>build</goal>
                   <goal>start</goal>
                 </goals>
                 <configuration><filter>faostat-generator</filter></configuration>
@@ -415,7 +384,6 @@
                 <goals>
                   <goal>build</goal>
                   <goal>start</goal>
-                  <goal>copy</goal>
                 </goals>
                 <configuration><filter>faostat-compressor</filter></configuration>
               </execution>

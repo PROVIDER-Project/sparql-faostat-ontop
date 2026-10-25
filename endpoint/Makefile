@@ -17,6 +17,7 @@ IMAGE ?= $(REPOSITORY):$(VERSION)
 DATA_REPOSITORY_URL ?= https://maven.inf-ai.duckdns.org/releases
 PORT ?= 8081
 GHCR_USER ?=
+DATABASE_REPOSITORY ?= $(ENDPOINT_DIR)/../database/target/m2
 M2_DIR ?= $(ENDPOINT_DIR)/.cache/maven
 M2_SETTINGS ?= $(HOME)/.m2/settings.xml
 M2_SECURITY ?= $(HOME)/.m2/settings-security.xml
@@ -33,20 +34,25 @@ COMPOSE = FAOSTAT_IMAGE="$(IMAGE)" ENDPOINT_VERSION="$(VERSION)" \
 
 help: ## Show available targets (the default)
 	@awk 'BEGIN { FS = ":.*## " } /^[[:alnum:]_.-]+:.*## / { printf "make %-24s # %s\n", $$1, $$2 }' "$(ENDPOINT_DIR)/Makefile"
-	printf '\nOverrides: VERSION DATABASE_VERSION DUCKDB_JDBC_VERSION REPOSITORY IMAGE PORT GHCR_USER M2_DIR M2_SETTINGS M2_SECURITY\n'
+	printf '\nOverrides: VERSION DATABASE_VERSION DUCKDB_JDBC_VERSION REPOSITORY IMAGE PORT GHCR_USER M2_DIR M2_SETTINGS M2_SECURITY DATABASE_REPOSITORY\n'
 
 show-config: ## Show the selected image, artifact versions and host port
 	@printf '%-22s %s\n' \
 		IMAGE "$(IMAGE)" VERSION "$(VERSION)" DATABASE_VERSION "$(DATABASE_VERSION)" \
 		DUCKDB_JDBC_VERSION "$(DUCKDB_JDBC_VERSION)" DATA_REPOSITORY_URL "$(DATA_REPOSITORY_URL)" PORT "$(PORT)" \
-		M2_DIR "$(M2_DIR)" M2_SETTINGS "$(M2_SETTINGS)" M2_SECURITY "$(M2_SECURITY)" \
+		DATABASE_REPOSITORY "$(DATABASE_REPOSITORY)" M2_DIR "$(M2_DIR)" M2_SETTINGS "$(M2_SETTINGS)" M2_SECURITY "$(M2_SECURITY)" \
 		MAVEN_IMAGE "$(MAVEN_IMAGE)" MAVEN_OFFLINE "$(MAVEN_OFFLINE)"
 
-resolve: ## Resolve data/JDBC into target/artifacts using the project-local Maven cache
+resolve: ## Resolve from database/target/m2, the Maven cache or remote repositories
 	cd "$(ENDPOINT_DIR)"
 	mkdir -p "$(M2_DIR)/repository" "$(ARTIFACT_DIR)"
 	cache_dir=$$(cd "$(M2_DIR)" && pwd)
 	set --
+	if [ -n "$(DATABASE_REPOSITORY)" ] && [ -d "$(DATABASE_REPOSITORY)" ]; then
+		database_repository=$$(cd "$(DATABASE_REPOSITORY)" && pwd)
+		set -- "$$@" --mount "type=bind,src=$$database_repository,dst=/database-repository,readonly" \
+			--env FAOSTAT_LOCAL_REPOSITORY=true
+	fi
 	if [ -f "$(M2_SETTINGS)" ]; then
 		set -- "$$@" --mount "type=bind,src=$(M2_SETTINGS),dst=/tmp/maven-home/.m2/settings.xml,readonly"
 	fi

@@ -1,208 +1,114 @@
 # FAOSTAT Ontop endpoint
 
-A self-contained Ontop image built from a published FAOSTAT database artifact.
-A temporary Maven container resolves the database from local/remote repositories
-before Docker packaging. The Dockerfile decompresses it into the image; starting
-a container requires no database download or ingestion.
-
-Run `make help` in this folder for available targets. GNU Make, Docker with
-BuildKit/Compose, and Python 3 for endpoint tests are required. Allow space for
-the expanded database (~859 MiB), JDBC/runtime and Docker build cache.
+Package the preloaded FAOSTAT database, JDBC driver and mappings into an Ontop
+image. Startup requires no data download or ingestion.
 
 ## Build and run
 
+Requires GNU Make and Docker with BuildKit/Compose. From this folder:
+
 ```sh
 make build
-make test
 make up
-make logs
-make down
 ```
 
-The default image is `ghcr.io/provider-project/sparql-faostat-ontop:0.0.1`.
-Building that tag locally does not publish it or assume it already exists in
-GHCR. `make up` builds then starts the service at `http://localhost:8081/sparql`;
-`make down` stops this Compose project. Compose's explicit project name is
-`sparql-faostat-ontop`, retaining the former root Compose project's identity.
-These lifecycle commands affect that project only when explicitly invoked.
-
-## Independent versions
+The database is resolved from `../database/target/m2` by default when present,
+with a separate Maven cache and remote repositories available too. To populate
+that project-local repository first:
 
 ```sh
+mvn -f ../database/pom.xml -P local deploy
+```
+
+The `local` profile skips installation into your normal Maven repository,
+keeping the generated dataset separate from other artifacts. Without it,
+`mvn install` and `mvn deploy` also install the dataset into the configured
+local repository (usually `~/.m2/repository`).
+
+The service runs at [localhost:8081/sparql](http://localhost:8081/sparql).
+`make up` builds before starting; `make down` stops it. Use `make help` for all
+targets and `make show-config` to inspect settings.
+
+## Configuration
+
+Override settings on Make's command line, through the environment, or in an
+optional `.env` file (copy `.env.example`; use unquoted Make assignments).
+Command-line values take precedence over `.env`, then environment values.
+
+```sh
+make build DATABASE_REPOSITORY=/path/to/m2
 make build VERSION=0.0.2 DATABASE_VERSION=0.0.1
-make up VERSION=0.0.2 DATABASE_VERSION=0.0.1 PORT=8091
-make show-config
 ```
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `VERSION` | `0.0.1` | Endpoint image release and OCI version label |
-| `DATABASE_VERSION` | `0.0.1` | Published DuckDB artifact release |
-| `DUCKDB_JDBC_VERSION` | `1.5.6.0` | JDBC release, compatible with the database |
-| `REPOSITORY` | `ghcr.io/provider-project/sparql-faostat-ontop` | Image repository |
-| `IMAGE` | `$(REPOSITORY):$(VERSION)` | Full image reference override |
-| `DATA_REPOSITORY_URL` | `https://maven.inf-ai.duckdns.org/releases` | Default Maven data repository |
-| `PORT` | `8081` | Compose host port |
-| `GHCR_USER` | empty | Personal GitHub username for registry login |
+| Variable | Default / purpose |
+| --- | --- |
+| `DATABASE_REPOSITORY` | `../database/target/m2`; set empty to disable |
+| `M2_DIR` | `.cache/maven`; contains the writable `repository/` cache |
+| `M2_SETTINGS` | `~/.m2/settings.xml` |
+| `M2_SECURITY` | `~/.m2/settings-security.xml` |
+| `DATA_REPOSITORY_URL` | `https://maven.inf-ai.duckdns.org/releases` |
+| `VERSION` / `DATABASE_VERSION` | Independent endpoint/database versions; both `0.0.1` |
+| `DUCKDB_JDBC_VERSION` | `1.5.6.0`; keep compatible with the database |
+| `REPOSITORY` | `ghcr.io/provider-project/sparql-faostat-ontop` |
+| `IMAGE` | `$(REPOSITORY):$(VERSION)` |
+| `PORT` | `8081` |
 
-`DATABASE_VERSION` selects the Maven artifact
-`org.aksw.data.faostat:faostat-qcl-2025-duckdb:VERSION:duckdb.zst`.
-The build uses standalone `dependency:copy` with pinned plugin version 3.11.0;
-no resolver POM is needed. JDBC is resolved independently through Maven too.
-Maven validates remote checksums; the image records SHA-1 digests of the resolved
-inputs under `/opt/ontop/input/` for traceability. There is no ad-hoc archive
-path fallback or automatic invocation of the database generator.
-
-## Build-time Maven configuration
-
-`make resolve` runs a disposable Maven container, using a writable Maven
-repository in `endpoint/.cache/maven/repository` by default. `make build` always
-runs resolution first, then builds the Dockerfile with the staged artifacts.
-Maven reuses locally installed/cached releases and downloads missing artifacts
-and plugin dependencies into that same project-local repository.
-
-Override `M2_DIR` through the environment, Make's command line or the optional
-gitignored `.env` file:
+The publication folder is read-only; `M2_DIR` is a separate writable cache.
+To resolve a normal host Maven installation instead:
 
 ```sh
-M2_DIR=/mnt/datasets/faostat-m2 make build
-make build M2_DIR=/mnt/datasets/faostat-m2
-# To use your normal Maven repository instead:
-make build M2_DIR="$HOME/.m2"
-cp .env.example .env
+make build M2_DIR="$HOME/.m2" DATABASE_REPOSITORY=
 ```
 
-`M2_DIR` is the directory containing `repository/`, rather than the repository
-itself. The `.env` file uses Make assignment syntax (unquoted paths).
-Command-line assignments take precedence over `.env`, which takes precedence
-over inherited environment values. `ENV_FILE=/path/to/build.env` selects another
-configuration file. `make show-config` shows selected paths without file contents.
+Existing settings/security files are mounted read-only into the Maven helper.
+Mirrors, profiles and credentials apply; cache/settings files stay out of image
+layers. A broad `mirrorOf=*` needs an exclusion such as `*,!faostat-local-build`
+to allow direct reads from the project-local publication repository.
 
-Settings default independently to `$HOME/.m2/settings.xml` and
-`$HOME/.m2/settings-security.xml`. Existing files are mounted read-only into the
-helper container. Override them with `M2_SETTINGS` and `M2_SECURITY`; missing
-files are optional. Maven's user home is set to their mount directory so encrypted
-passwords can use `settings-security.xml`. These files never enter Docker's build
-context or image layers. Host environment variables referenced by settings are
-not implicitly forwarded.
-
-Global build settings supply the public FAOSTAT repository and Central; host user
-settings are merged by Maven, including mirrors, profiles and server credentials.
-The explicit repository override keeps downloaded datasets out of your normal
-Maven repository even when the host settings declare a different localRepository.
-
-The helper runs as your host UID/GID, leaving host-owned files, and is removed
-when it exits. `MAVEN_IMAGE` defaults to `maven:3.9.11-eclipse-temurin-17`.
-`MAVEN_OFFLINE=true` disables remote resolution once the cache contains all
-requested artifacts and Maven's plugin dependencies. Resolution runs on every
-build, so fresh local installs and changed settings are used without a BuildKit
-cache invalidation step. Avoid simultaneous builds sharing the same output folder.
-
-```text
-endpoint/.cache/maven/repository/   Persistent Maven cache (gitignored)
-endpoint/target/artifacts/         Resolved database/JDBC and SHA-1 sidecars (gitignored)
-```
-
-Docker still stores its images, layers and normal build cache in its configured
-storage; the large Maven downloads use the directory above. Neither Maven nor
-its cache/settings becomes part of the endpoint runtime. Delete `.cache/maven/`
-to clear Maven's downloads; delete `target/` to clear staged inputs.
-
-To use a locally installed database with this default project-local repository:
-
-```sh
-# From the repository root; install only after generating the desired release:
-mvn -f database/pom.xml -Dmaven.repo.local="$PWD/endpoint/.cache/maven/repository" install
-make -C endpoint build
-```
-
-Keep released artifact versions immutable. The endpoint build never implicitly
-runs the database generator or publishes a Maven artifact.
+Maven uses cached releases first, so publish changed data under a new version.
+`MAVEN_OFFLINE=true` works after all artifacts and plugins have been cached;
+even a file repository needs an initial normal resolution.
 
 ## Publish to GHCR
-
-Your GitHub account needs package write permission for the destination namespace.
-Use a classic personal access token with `write:packages` as the login password,
-authorizing organization SSO if applicable. CI can authenticate separately.
 
 ```sh
 make login GHCR_USER=YOUR_GITHUB_USERNAME
 make publish VERSION=0.0.2 DATABASE_VERSION=0.0.1
 ```
 
-`publish` builds the selected image before pushing it. Neither `build`, `test`
-nor Maven database deployment pushes images. New GHCR packages initially default
-to private; change package visibility to public if anonymous pulls are intended.
-The Dockerfile's source label links to the provider repository.
-See [GitHub's container registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+`publish` builds then pushes; `build` alone stays local. Authenticate with a
+GitHub token that can write packages and choose public package visibility if
+anonymous pulls are needed. See [GitHub's registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Use new endpoint versions for mapping/configuration changes; the database
+version can stay fixed.
 
-Use new image release tags when mappings/configuration change; the database
-version can remain fixed. Keep published data releases immutable. Kubernetes
-deployments can additionally pin the resulting registry digest.
+## Design and storage
 
-## Docker and Compose directly
+`make resolve` runs a disposable Maven container to copy the database and JDBC
+artifacts into `target/artifacts`; `make build` resolves before Docker packaging.
+The helper uses your UID/GID. It does not generate or publish the database.
+Direct `docker build` requires an earlier `make resolve`.
 
-The Dockerfile packages already resolved inputs. Resolve first, using matching
-versions when overriding the defaults:
+The image expands the database into its first added runtime layer, followed by
+JDBC, mappings and configuration. Ontop runs as a non-root user; DuckDB is
+read-only and spill files use `/tmp/duckdb`. Allow about 859 MiB for the expanded
+database, plus runtime and build cache.
 
-```sh
-make resolve DATABASE_VERSION=0.0.1 DUCKDB_JDBC_VERSION=1.5.6.0
-docker build -t ghcr.io/provider-project/sparql-faostat-ontop:0.0.2 \
-  --build-arg ENDPOINT_VERSION=0.0.2 --build-arg FAOSTAT_VERSION=0.0.1 \
-  --build-arg DUCKDB_JDBC_VERSION=1.5.6.0 .
-docker compose config
-```
+Maven downloads live in `.cache/maven/repository`; staged files live in
+`target/artifacts`. Docker manages image layers and its build cache separately.
+Cleaning the database project removes its publication folder, but leaves the
+endpoint cache intact. Avoid concurrent builds sharing an output folder.
 
-Direct `docker build` and `docker compose build` require those staged files;
-use `make build` for the complete workflow. The Makefile runs from its own
-directory, so `make -C endpoint …` from the repository root and
-`make -f /absolute/path/to/endpoint/Makefile …` both work.
-`make up` builds first, then passes the selected image and service configuration
-to Compose. M2 paths and settings are build inputs, not runtime configuration.
-
-## Runtime and layers
-
-The final stage inherits `ontop/ontop:5.5.0`'s non-root user, entrypoint and
-healthcheck. DuckDB is mode 0444, JDBC opens it read-only, and query spill files
-use `/tmp/duckdb`. The database is the first added runtime layer (`data-base`),
-followed by JDBC (`endpoint-base`), then mappings, configuration and attribution.
-Endpoint/data version labels are separate and come after the shared layers.
-
-Downstream variants can build/publish `endpoint-base` and derive from its digest
-for exact shared-base reuse. That target needs mappings and `ONTOP_*_FILE`
-settings before it can serve a dataset. Build tools and compressed inputs remain
-outside the final image. The `.dockerignore` allowlist includes only the four staged artifact files
-and endpoint configuration/attribution; it excludes the Maven cache and settings.
-
-The shared chart is maintained under `../../helm-charts/charts/ontop`. Select
-`image.repository`, `image.tag` or `image.digest` in release values; image and
-chart releases remain independent. See [the chart README](../../helm-charts/charts/ontop/README.md).
+For Kubernetes, use the sibling [Ontop Helm chart](../../helm-charts/charts/ontop/README.md)
+and select the published image tag or digest.
 
 ## Tests
 
-`make check` verifies orchestration using a fake Docker CLI, including build
-failure preventing a push and independent version arguments. It needs no daemon
-or registry access. `make test` runs these checks, builds the configured image,
-and runs five real endpoint checks
-in an isolated container with network disabled and no host bind mounts. They
-check observation/country-link counts, fixed-subject literal types, leading-zero
-codes, non-root execution, read-only database permissions and checksum metadata.
-The test container is removed afterward; no deployed endpoint is replaced.
+`make check` runs orchestration checks without Docker. `make test` also builds
+the image and checks SPARQL results, types, country links and runtime permissions
+in an isolated container. Python 3 is required.
 
-## Source and attribution
+## Sources and licence
 
-The configured input is:
-
-https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/Production_Crops_Livestock_E_All_Data_Normalized-2025/1/Production_Crops_Livestock_E_All_Data_Normalized-2025-1-Production_Crops_Livestock_E_All_Data_Normalized.csv.zst
-
-JDBC driver:
-https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar
-
-FAO. 2025. FAOSTAT: Production: Crops and livestock products.
-[Accessed on 10 October 2026]. https://www.fao.org/faostat/en/#data/QCL.
-Licence: CC-BY-4.0.
-
-Data use is subject to [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-and the [FAO Statistical Database Terms of Use](https://www.fao.org/contact-us/terms/db-terms-of-use/en/).
-FAO does not endorse this service. The dataset's attribution and license are
-also exposed as RDF metadata.
+See the [source attribution and licence](../README.md#sources-and-licence).
+Attribution and geographic provenance are also included in the image.

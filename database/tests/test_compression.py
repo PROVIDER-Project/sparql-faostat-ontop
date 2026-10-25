@@ -19,6 +19,7 @@ class CompressionTests(unittest.TestCase):
         self.input = self.root / 'database with spaces.duckdb'
         self.output = self.root / 'database with spaces.duckdb.zst'
         self.partial = Path(str(self.output) + '.part')
+        self.marker = Path(str(self.output) + '.completed')
         self.content = bytes(range(256)) * 4096 + bytes(1024 * 1024)
         self.input.write_bytes(self.content)
 
@@ -26,15 +27,22 @@ class CompressionTests(unittest.TestCase):
         return subprocess.run(['sh', str(SCRIPT), str(self.input), str(self.output), '6', '2'],
                               capture_output=True, text=True, env=env)
 
-    def test_round_trip_and_replacement_preserve_source(self):
-        for _ in range(2):
-            result = self.compress()
-            self.assertEqual(result.returncode, 0, result.stderr)
-            actual = subprocess.run([ZSTD, '-d', '--stdout', str(self.output)],
-                                    capture_output=True, check=True).stdout
-            self.assertEqual(actual, self.content)
-            self.assertEqual(self.input.read_bytes(), self.content)
-            self.assertFalse(self.partial.exists())
+    def test_round_trip_then_skip_without_raw_database(self):
+        raw_marker = Path(str(self.input) + '.complete')
+        raw_marker.touch()
+        self.output.write_bytes(b'old unmarked archive')
+        result = self.compress()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        actual = subprocess.run([ZSTD, '-d', '--stdout', str(self.output)],
+                                capture_output=True, check=True).stdout
+        self.assertEqual(actual, self.content)
+        self.assertFalse(self.input.exists())
+        self.assertFalse(raw_marker.exists())
+        self.assertTrue(self.marker.is_file())
+        before = (self.output.stat().st_mtime_ns, self.marker.stat().st_mtime_ns)
+        self.assertEqual(self.compress().returncode, 0)
+        self.assertEqual(before, (self.output.stat().st_mtime_ns, self.marker.stat().st_mtime_ns))
+        self.assertFalse(self.partial.exists())
 
     def test_missing_or_empty_database_is_rejected(self):
         for empty in (False, True):
@@ -42,7 +50,9 @@ class CompressionTests(unittest.TestCase):
                 self.input.unlink(missing_ok=True)
                 if empty:
                     self.input.touch()
+                self.marker.touch()
                 self.assertNotEqual(self.compress().returncode, 0)
+                self.assertFalse(self.marker.exists())
                 self.assertFalse(self.output.exists())
                 self.assertFalse(self.partial.exists())
 
@@ -67,6 +77,7 @@ exec "$REAL_ZSTD" "$@"
                 self.assertEqual(self.compress(env).returncode, 7)
                 self.assertEqual(self.output.read_bytes(), b'previous archive')
                 self.assertEqual(self.input.read_bytes(), self.content)
+                self.assertFalse(self.marker.exists())
                 self.assertFalse(self.partial.exists())
 
 

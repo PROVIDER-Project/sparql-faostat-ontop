@@ -1,155 +1,100 @@
-# FAOSTAT preloaded database
+# FAOSTAT database artifact
 
-This folder owns database generation and Maven publication. It uses the existing
-DuckDB loader and separate zstd compressor containers, exporting only the archive.
-There is no Makefile and no dependency on the endpoint build.
+Build and publish a preloaded DuckDB database from pinned FAOSTAT QCL 2025
+and geographic definition artifacts. The output is `target/faostat.duckdb.zst`.
 
-Run commands below from this folder. Maven 3.9.11+ / JDK 17+ and Docker are
-recommended. Legacy runtime folders are not used or modified by a normal Maven generation. Maven output is local to this folder's `target/`.
+## Build
 
-## Build a preloaded database with Maven
+Requires Maven and a JDK (recommended: Maven 3.9.11+ / JDK 17+) and a local
+Docker daemon. Run from this folder:
 
-`pom.xml` builds the database artifact from the pinned source CSVs, including geographic
-links, audit tables, code lists and lookup indexes, then compresses it with zstd
-in a separate Docker Maven Plugin execution. The
-[reference generator POM](https://gitlab.com/coypu-project/data-sources/-/blob/main/disasters-with-archive/generator/pom.xml?ref_type=heads)
-provides the build/run/copy/attach pattern. The POM inherits the shared AKSW
-data-deployment parent. Public source downloads need no credentials.
-
-Requirements: Maven 3.6.3+ on JDK 8+ and access to a Docker daemon (API 1.44+ by
-default). Host-side DuckDB and zstd installations are unnecessary for the build.
-Run from this repository:
-
-```bash
-mvn clean package
+```sh
+mvn -P local deploy
 ```
 
-The published output is `target/faostat.duckdb.zst`, attached with type
-`duckdb.zst` and no classifier. The uncompressed database stays on a temporary
-Docker volume; only the smaller, verified archive is copied to the Maven host.
-No endpoint is started and existing runtime databases are not changed.
-The build uses no host bind mounts, so the Docker daemon can be remote.
+The `local` profile publishes to `target/m2` and skips Maven's install step,
+keeping the generated dataset separate from your other Maven artifacts.
+Without the profile, `mvn install` and `mvn deploy` also install it into your
+configured local repository, usually `~/.m2/repository`. Source and plugin
+dependencies always use Maven's configured cache.
 
-The default `generate-data` profile runs these steps:
+The endpoint reads `database/target/m2` by default when present. Its
+`DATABASE_REPOSITORY` setting can select another folder or disable this input;
+see [endpoint configuration](../endpoint/README.md#configuration).
+Override this build's publication folder with `-Dlocal.deployment.directory=/path/to/m2`.
 
-1. At `generate-resources`, `maven-dependency-plugin:copy` resolves pinned QCL
-   2025 and geographic definition artifacts into `target/inputs/`: three
-   compressed CSV files, geographic provenance JSON and the source README.
-   Maven caches the immutable release inputs in its local repository.
-2. At `process-resources`, `generate-preloaded-database` builds and runs a
-   generator based on `aksw/duckdb-shell:1.5.6`, using the existing SQL and
-   loader. It writes `faostat.duckdb` into an anonymous Docker volume at
-   `/output`, and Maven waits for successful DuckDB commit and process exit.
-3. At `prepare-package`, `compress-preloaded-database` builds and runs a
-   separate compressor image. It installs Debian's zstd package on
-   `debian:bookworm-slim`; no changes to `duckdb-shell` are required. The
-   compressor imports the completed generator's volume by container ID,
-   compresses to a `.part` file with a content checksum, runs `zstd --test`,
-   and renames the checked archive to `faostat.duckdb.zst`. Compression and
-   integrity-check failures fail Maven before output extraction/attachment.
-4. `docker:copy` extracts only the archive. A cleanup execution stops/removes
-   both containers and removes their anonymous output volume. Generator and
-   compressor images remain cached; neither image contains a preloaded database.
-5. At `package`, `build-helper-maven-plugin:attach-artifact` attaches the
-   compressed file for Maven installation or deployment.
+Repeated builds reuse completed output. After changing sources, SQL or generation
+settings, run `mvn -P local clean deploy`; `clean` removes all of `target/`,
+including the local publication repository.
 
-Each normal generation uses fresh containers and the current SQL. An old
-runtime completion marker cannot skip Maven generation. `mvn clean` removes
-this folder's `target/`, including staged inputs and the archive, while
-preserving Maven's local cache.
+## Remote publication
 
-The published release coordinates are:
-
-```text
-org.aksw.data.faostat:faostat-qcl-2025-duckdb:duckdb.zst:0.0.1
-```
-
-To install an already generated archive without running Docker again:
-
-```bash
-mvn -DskipGenerateData=true install
-```
-
-Do not combine this with `clean`: it requires the existing
-`target/faostat.duckdb.zst`. Publication inherits the parent POM deployment
-defaults; configure the intended repository and credentials for your release.
-The build does not push its internal images.
-
-Consumers must decompress before opening DuckDB or starting Ontop. For a local
-copy (requires the zstd CLI and space for the expanded database):
-
-```bash
-zstd --test target/faostat.duckdb.zst
-zstd --decompress --keep target/faostat.duckdb.zst
-```
-
-This produces `target/faostat.duckdb` and retains the archive. The endpoint
-Dockerfile downloads and decompresses the published artifact during its build.
-
-Settings can be overridden with Maven properties, for example:
-
-```bash
-mvn clean package -Dzstd.level=3 -Dzstd.threads=2
-mvn clean package -Dgenerator.timeout=3600000 -Dcompressor.timeout=900000
-mvn clean package -Ddata.repository.url=https://example.org/maven/releases
-```
-
-The default compression level is 6 with two worker threads. Timeouts are in
-milliseconds: 30 minutes for generation and 10 minutes for compression. The
-`duckdb.image`, `compressor.base.image`, `generator.image` and `compressor.image`
-properties control the images independently. Keep DuckDB aligned with JDBC when
-upgrading. SQL expects the current pinned input schemas. Override
-`data.repository.url` with a repository serving the same artifact coordinates
-when the mirror migrates; Compose's environment variable is independent.
-
-If a build fails or is interrupted, run `mvn docker:stop` to remove any remaining
-generator/compressor containers and their anonymous volumes before retrying.
-Completed archives in `target/` are removed by `mvn clean`.
-
-Plugin releases were checked on 22 October 2026 against Maven Central metadata:
-Docker Maven Plugin **0.49.0**, Dependency **3.11.0**, Build Helper **3.6.2**,
-Clean **3.5.0**, Install **3.2.0**, and Deploy **3.2.0**. Core plugins use stable
-Maven 3 releases. See the [Docker Maven Plugin manual](https://dmp.fabric8.io/)
-and [Build Helper attach-artifact documentation](https://www.mojohaus.org/build-helper-maven-plugin/attach-artifact-mojo.html).
-
-Validated on 22 October 2026: the two-execution Maven build and subsequent
-`mvn -DskipGenerateData=true install` succeeded. With zstd level 6 and two
-workers, the 900,214,784-byte database became a 125,515,511-byte archive
-(858.51 MiB → 119.70 MiB). Archive integrity testing and decompression passed;
-the decompressed database retained 4,209,110 source rows, 4,114,755 observations,
-1,222 geographic links and the original zero-valued sample. Both build
-containers and their shared volume were removed. All 15 Python/SQL/compression
-tests passed. The deployed endpoint and database were not changed.
-
-
-## Publish a release
-
-Change this POM's version for each new immutable database release. Configure
-Maven credentials using the server ID matching the deployment destination:
+Set a new version in `pom.xml` for each immutable release and configure matching
+server credentials in Maven's `settings.xml`:
 
 ```sh
 mvn deploy \
   -DaltDeploymentRepository=aksw-data-releases::https://maven.inf-ai.duckdns.org/releases
 ```
 
-Already published 0.0.1 must not be overwritten with regenerated bytes. For an
-existing generated archive, `mvn -DskipGenerateData=true install` or `deploy`
-attaches the existing `target/faostat.duckdb.zst` without regeneration; do not
-combine that mode with `clean`.
+The repository override uses `id::url`. Add `-Dmaven.install.skip=true` to avoid
+also installing the dataset into your normal local repository. `mvn package`
+only creates the archive; it neither installs nor deploys it.
 
-The endpoint independently resolves a host-installed or published release through Maven. Set its
-`DATABASE_VERSION` only when adopting a new artifact; publishing this database
-never rebuilds or redeploys the service.
+To publish an existing archive without running the generation containers:
+
+```sh
+mvn -P local -DskipGenerateData=true deploy
+```
+
+Do not combine this with `clean`, which removes the required archive.
+The current coordinates are
+`org.aksw.data.faostat:faostat-qcl-2025-duckdb:duckdb.zst:0.0.1`
+(type `duckdb.zst`, no classifier). Database publication does not build or deploy
+the endpoint.
+
+## Generation and caching
+
+Maven resolves inputs into `target/inputs`, then runs the DuckDB shell image
+with read-only input/SQL/script mounts and `target` mounted at `/output`.
+A separate small image installs zstd; its build tar contains no datasets.
+The Docker daemon must see the workspace at the same absolute path.
+
+The scripts own completion checks:
+
+- `faostat.duckdb.complete` marks a successfully loaded raw database.
+- `faostat.duckdb.zst.completed` plus a nonempty archive skips loading and compression.
+- Compression writes a temporary file, validates it, renames it and writes the
+  archive marker. It then removes the raw database. Failure preserves raw data
+  for retry.
+
+Markers are manual, not input fingerprints. To force generation while keeping
+resolved inputs and local publications, remove both markers before rebuilding.
+Use `mvn docker:stop` to remove leftover build containers after an interruption.
+
+Useful overrides (timeouts are milliseconds):
+
+```sh
+mvn -P local deploy -Dzstd.level=3 -Dzstd.threads=2
+mvn -P local deploy -Dgenerator.timeout=3600000 -Dcompressor.timeout=900000
+```
+
+Defaults: zstd level 6, two threads, 30-minute loading and 10-minute compression
+timeouts. Keep `duckdb.image` compatible with the endpoint's JDBC version.
+`data.repository.url` selects the source artifact repository.
+
+## Future option: ORAS
+
+An optional Maven profile could also publish the compressed file as an OCI data
+artifact, using [ORAS](https://oras.land/docs/how_to_guides/pushing_and_pulling/).
+The third-party [oras-maven-plugin](https://github.com/Tosan/oras-maven-plugin)
+is a candidate; CLI and credential compatibility would need verification.
+This is not implemented. Maven remains responsible for publication, local/remote
+resolution, mirrors and credentials; OCI consumption would be a separate change.
 
 ## Tests
 
-```sh
-python3 -m unittest discover -s tests -v
-sh tests/test_duckdb_shell.sh
-```
-
-Resolve the SQL fixture tests' JDBC driver through Maven (this direct plugin
-goal does not run database generation):
+Resolve the JDBC driver, then run the fixture and script checks:
 
 ```sh
 mvn org.apache.maven.plugins:maven-dependency-plugin:3.11.0:copy \
@@ -158,32 +103,12 @@ mvn org.apache.maven.plugins:maven-dependency-plugin:3.11.0:copy \
 python3 -m unittest discover -s tests -v
 ```
 
-SQL fixture tests use `target/test-dependencies/duckdb_jdbc-1.5.6.0.jar` by default;
-set `DUCKDB_JDBC_JAR` for another location. They require a JDK. Compression
-checks require host zstd. The shell smoke test needs Docker. No test depends on
-legacy runtime folders or the archive under `trash/`.
+Tests require Python, a JDK and host zstd. Set `DUCKDB_JDBC_JAR` to use another
+driver location. `sh tests/test_duckdb_shell.sh` additionally checks the shell
+image using Docker.
 
-## Archived workflows
+## Sources and licence
 
-The superseded source-loading Compose file is under
-`../trash/database/docker-compose.source.yaml`; the two-module Maven experiment
-is under `../trash/maven/`. These are reference material, not active build paths.
-Their old relative paths need adjustment before reuse.
-
-## Source and attribution
-
-The configured input is:
-
-https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/fao/faostat/Production_Crops_Livestock_E_All_Data_Normalized-2025/1/Production_Crops_Livestock_E_All_Data_Normalized-2025-1-Production_Crops_Livestock_E_All_Data_Normalized.csv.zst
-
-JDBC driver:
-https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar
-
-FAO. 2025. FAOSTAT: Production: Crops and livestock products.
-[Accessed on 10 October 2026]. https://www.fao.org/faostat/en/#data/QCL.
-Licence: CC-BY-4.0.
-
-Data use is subject to [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-and the [FAO Statistical Database Terms of Use](https://www.fao.org/contact-us/terms/db-terms-of-use/en/).
-FAO does not endorse this service. The dataset's attribution and license are
-also exposed as RDF metadata.
+See the [source attribution and licence](../README.md#sources-and-licence) and
+[geographic policy record](../endpoint/ontop/faostat-geographic-definitions.meta.md).
+The POM includes artifact metadata and pinned source coordinates.

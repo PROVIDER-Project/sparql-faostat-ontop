@@ -45,6 +45,28 @@ exit "${TEST_EXIT:-0}"
         self.assertEqual(self.run_loader(TEST_EXIT='1').returncode, 0)
         self.assertEqual(self.calls.read_text(), calls)
 
+    def test_completed_archive_skips_without_raw_database(self):
+        archive = Path(str(self.database) + '.zst')
+        archive.write_bytes(b'checked archive')
+        completion = Path(str(archive) + '.completed')
+        completion.touch()
+        before = completion.stat().st_mtime_ns
+        self.assertEqual(self.run_loader(TEST_EXIT='7').returncode, 0)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.database.exists())
+        self.assertEqual(completion.stat().st_mtime_ns, before)
+
+    def test_stale_archive_marker_is_removed_before_failed_reload(self):
+        archive = Path(str(self.database) + '.zst')
+        completion = Path(str(archive) + '.completed')
+        for empty in (False, True):
+            with self.subTest(empty=empty):
+                if empty:
+                    archive.touch()
+                completion.touch()
+                self.assertEqual(self.run_loader(TEST_EXIT='7').returncode, 7)
+                self.assertFalse(completion.exists())
+
     def test_deleting_marker_requests_reload(self):
         self.assertEqual(self.run_loader().returncode, 0)
         self.marker.unlink()

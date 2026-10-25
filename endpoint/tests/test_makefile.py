@@ -34,7 +34,7 @@ if sys.argv[1] == 'build':
                                'DOCKER=' + str(self.docker),
                                'ARTIFACT_DIR=' + str(self.root / 'artifacts'), *args],
                               cwd=self.root, capture_output=True, text=True,
-                              env=dict(os.environ, M2_DIR=str(self.root / 'm2'), FAKE_DOCKER_LOG=str(self.log),
+                              env=dict(os.environ, MAKEFLAGS='', MFLAGS='', MAKEOVERRIDES='', MAKELEVEL='0', M2_DIR=str(self.root / 'm2'), FAKE_DOCKER_LOG=str(self.log),
                                        FAKE_BUILD_EXIT=build_exit, FAKE_RESOLVE_EXIT=resolve_exit))
 
     def calls(self):
@@ -75,6 +75,24 @@ if sys.argv[1] == 'build':
         self.assertIn(f'{os.getuid()}:{os.getgid()}', args)
         self.assertTrue((home / 'repository').is_dir())
         self.assertFalse(any('settings' in arg or str(home) in arg for arg in build['args']))
+
+    def test_local_database_repository_is_mounted_readonly(self):
+        repository = self.root / 'database repository'
+        repository.mkdir()
+        result = self.make('resolve', 'DATABASE_REPOSITORY=' + str(repository))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = self.calls()[0]['args']
+        self.assertIn(f'type=bind,src={repository},dst=/database-repository,readonly', args)
+        self.assertIn('FAOSTAT_LOCAL_REPOSITORY=true', args)
+
+    def test_missing_or_disabled_database_repository_uses_remote_fallback(self):
+        for repository in [str(self.root / 'not-deployed'), '']:
+            with self.subTest(repository=repository):
+                result = self.make('resolve', 'DATABASE_REPOSITORY=' + repository)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = self.calls()[-1]['args']
+                self.assertFalse(any('dst=/database-repository' in arg for arg in args))
+                self.assertNotIn('FAOSTAT_LOCAL_REPOSITORY=true', args)
 
     def test_env_file_and_command_line_override(self):
         config = self.root / 'build.env'
