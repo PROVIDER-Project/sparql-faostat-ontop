@@ -102,11 +102,32 @@ endpoint cache intact. Avoid concurrent builds sharing an output folder.
 For Kubernetes, use the sibling [Ontop Helm chart](../../helm-charts/charts/ontop/README.md)
 and select the published image tag or digest.
 
+## Streaming query results
+
+`jdbc.property.jdbc_stream_results=true` enables DuckDB JDBC's opt-in streaming
+mode. Otherwise the driver materializes the complete SQL result before returning
+rows. Client-side `.stream().limit(10)` only limits consumption; use SPARQL
+`LIMIT 10` when the server should return at most ten rows.
+
+Streaming does not change the engine thread count: scans and aggregations can
+still run in parallel. Blocking SQL operators such as sorting and duplicate
+elimination can still consume memory before returning rows. Slow consumers keep a connection occupied, and errors can arrive after
+part of a response has been sent. Strict RDF semantics remain enabled. Budget
+DuckDB native memory alongside the JVM heap and provision scratch space for queries that need it.
+See [DuckDB result handling](https://duckdb.org/docs/current/clients/java/result_handling).
+
 ## Tests
 
-`make check` runs orchestration checks without Docker. `make test` also builds
-the image and checks SPARQL results, types, country links and runtime permissions
+`make check` runs orchestration and available JDBC streaming checks without
+Docker. `make test` also builds the image and checks SPARQL results, types, country links and runtime permissions
 in an isolated container. Python 3 is required.
+
+The JDBC streaming regression check uses a JDK and the resolved driver (or
+`DUCKDB_JDBC_JAR`), without Docker:
+
+```sh
+python3 -m unittest discover -s tests -p test_jdbc_streaming.py -v
+```
 
 ## Sources and licence
 

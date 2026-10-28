@@ -42,6 +42,16 @@ class EndpointImageTests(unittest.TestCase):
                                '--header=Accept: application/sparql-results+json', url)
         return json.loads(response)['results']['bindings']
 
+    def test_unbounded_spo_can_be_stopped_after_ten_rows(self):
+        url = 'http://localhost:8080/sparql?' + urlencode({'query': 'SELECT * { ?s ?p ?o }'})
+        prefix = self.docker(
+            'exec', self.container, 'sh', '-c',
+            'wget -qO- --header=Accept:text/tab-separated-values "$1" | head -n 11',
+            'sh', url)
+        lines = prefix.splitlines()
+        self.assertEqual(len(lines), 11)
+        self.assertEqual(set(lines[0].split('\t')), {'?s', '?p', '?o'})
+
     def test_observation_count(self):
         rows = self.query('SELECT (COUNT(*) AS ?n) WHERE { ?o a <http://purl.org/linked-data/cube#Observation> }')
         self.assertEqual(int(rows[0]['n']['value']), 4114755)

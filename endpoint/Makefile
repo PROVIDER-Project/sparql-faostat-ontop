@@ -78,9 +78,10 @@ build: resolve ## Resolve artifacts and build the endpoint image
 		--build-arg FAOSTAT_VERSION="$(DATABASE_VERSION)" \
 		--build-arg DUCKDB_JDBC_VERSION="$(DUCKDB_JDBC_VERSION)" .
 
-check: ## Check Makefile orchestration without Docker or network access
+check: ## Check orchestration and available JDBC streaming checks without Docker
 	cd "$(ENDPOINT_DIR)"
 	$(PYTHON) -m unittest discover -s tests -p test_makefile.py -v
+	$(PYTHON) -m unittest discover -s tests -p test_jdbc_streaming.py -v
 
 test: check build ## Build and run isolated SPARQL/image integration checks
 	cd "$(ENDPOINT_DIR)"
