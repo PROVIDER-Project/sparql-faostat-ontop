@@ -9,9 +9,10 @@ ENV_FILE ?= $(ENDPOINT_DIR)/.env
 
 DOCKER ?= docker
 PYTHON ?= python3
-VERSION ?= 0.0.1
-DATABASE_VERSION ?= 0.0.1
-DUCKDB_JDBC_VERSION ?= 1.5.6.0
+# Source the shared shell defaults only when no Make/environment override exists.
+VERSION ?= $(shell . "$(ENDPOINT_DIR)/build.conf"; printf '%s' "$$VERSION")
+DATABASE_VERSION ?= $(shell . "$(ENDPOINT_DIR)/build.conf"; printf '%s' "$$DATABASE_VERSION")
+DUCKDB_JDBC_VERSION ?= $(shell . "$(ENDPOINT_DIR)/build.conf"; printf '%s' "$$DUCKDB_JDBC_VERSION")
 REPOSITORY ?= ghcr.io/provider-project/sparql-faostat-ontop
 IMAGE ?= $(REPOSITORY):$(VERSION)
 DATA_REPOSITORY_URL ?= https://maven.inf-ai.duckdns.org/releases
@@ -91,7 +92,9 @@ login: ## Log in to GHCR (set GHCR_USER; enter a classic PAT at the password pro
 	@test -n "$(GHCR_USER)" || { printf '%s\n' 'Set GHCR_USER to your personal GitHub username.' >&2; exit 1; }
 	$(DOCKER) login ghcr.io --username "$(GHCR_USER)"
 
-publish: build ## Build and push the selected image (authenticate separately)
+publish: ## Refuse an existing remote tag, then build and push (authenticate separately)
+	sh "$(ENDPOINT_DIR)/build/check-publish-tag.sh" "$(DOCKER)" "$(IMAGE)"
+	$(MAKE) --no-print-directory -C "$(ENDPOINT_DIR)" build
 	$(DOCKER) push "$(IMAGE)"
 
 up: build ## Build and start the local Compose service on PORT

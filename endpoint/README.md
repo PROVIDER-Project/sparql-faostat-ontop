@@ -31,9 +31,13 @@ targets and `make show-config` to inspect settings.
 
 ## Configuration
 
+Release defaults live in the tracked `build.conf`: plain `VAR=VAL` entries for
+`VERSION`, `DATABASE_VERSION` and `DUCKDB_JDBC_VERSION`, also sourceable in Bash
+with `. ./build.conf`. Edit this file when releasing a new version.
+
 Override settings on Make's command line, through the environment, or in an
 optional `.env` file (copy `.env.example`; use unquoted Make assignments).
-Command-line values take precedence over `.env`, then environment values.
+Precedence: command line, `.env`, environment, then `build.conf` defaults.
 
 ```sh
 make build DATABASE_REPOSITORY=/path/to/m2
@@ -76,8 +80,14 @@ make login GHCR_USER=YOUR_GITHUB_USERNAME
 make publish VERSION=0.0.2 DATABASE_VERSION=0.0.1
 ```
 
-`publish` builds then pushes; `build` alone stays local. Authenticate with a
-GitHub token that can write packages and choose public package visibility if
+`publish` first checks the exact remote `IMAGE`. An existing tag stops publication
+with instructions to change `VERSION` in `build.conf` or pass `VERSION=...`.
+Authentication/network errors also stop it; only an explicit missing manifest
+allows building and pushing. This is best-effort: a concurrent publisher can
+still create the tag between the check and push.
+
+`build` freely replaces the local image and never performs this registry check.
+Authenticate with a GitHub token that can write packages and choose public package visibility if
 anonymous pulls are needed. See [GitHub's registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 Use new endpoint versions for mapping/configuration changes; the database
 version can stay fixed.

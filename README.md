@@ -35,8 +35,9 @@ Use `make -C endpoint down` to stop it and `make -C endpoint help` for all targe
 
 ## Publish
 
-Database and endpoint releases have independent versions. Choose a new database
-version in `database/pom.xml` before publishing a new immutable release:
+Database and endpoint releases have independent versions. Endpoint release
+defaults live in `endpoint/build.conf`; `make … VERSION=...` overrides them.
+Choose a new database version in `database/pom.xml` before publishing a new immutable release:
 
 ```sh
 mvn -f database/pom.xml deploy \
