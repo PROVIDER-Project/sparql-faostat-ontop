@@ -92,9 +92,10 @@ login: ## Log in to GHCR (set GHCR_USER; enter a classic PAT at the password pro
 	@test -n "$(GHCR_USER)" || { printf '%s\n' 'Set GHCR_USER to your personal GitHub username.' >&2; exit 1; }
 	$(DOCKER) login ghcr.io --username "$(GHCR_USER)"
 
-publish: ## Refuse an existing remote tag, then build and push (authenticate separately)
+publish: ## Check remote tag and known image digests before pushing
 	sh "$(ENDPOINT_DIR)/build/check-publish-tag.sh" "$(DOCKER)" "$(IMAGE)"
 	$(MAKE) --no-print-directory -C "$(ENDPOINT_DIR)" build
+	sh "$(ENDPOINT_DIR)/build/check-publish-digest.sh" "$(DOCKER)" "$(IMAGE)"
 	$(DOCKER) push "$(IMAGE)"
 
 up: build ## Build and start the local Compose service on PORT

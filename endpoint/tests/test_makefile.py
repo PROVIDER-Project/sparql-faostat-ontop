@@ -23,13 +23,17 @@ class MakefileTests(unittest.TestCase):
 with open(os.environ['FAKE_DOCKER_LOG'], 'a') as stream:
     stream.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd()}) + '\\n')
 if sys.argv[1:3] == ['manifest', 'inspect']:
-    state = os.environ.get('FAKE_MANIFEST_STATUS', 'missing')
+    is_digest = '@sha256:' in sys.argv[-1]
+    state = os.environ.get('FAKE_DIGEST_STATUS' if is_digest else 'FAKE_MANIFEST_STATUS', 'missing')
     if state == 'present':
         print('{}')
         sys.exit(0)
-    message = os.environ.get('FAKE_MANIFEST_ERROR') or ('no such manifest: ' + sys.argv[-1])
+    message = os.environ.get('FAKE_DIGEST_ERROR' if is_digest else 'FAKE_MANIFEST_ERROR') or ('no such manifest: ' + sys.argv[-1])
     print(message, file=sys.stderr)
     sys.exit(1)
+if sys.argv[1:3] == ['image', 'inspect']:
+    print(os.environ.get('FAKE_REPO_DIGESTS', ''))
+    sys.exit(int(os.environ.get('FAKE_IMAGE_INSPECT_EXIT', '0')))
 if sys.argv[1] == 'run':
     sys.exit(int(os.environ.get('FAKE_RESOLVE_EXIT', '0')))
 if sys.argv[1] == 'build':
@@ -107,7 +111,67 @@ if sys.argv[1] == 'build':
                 result = self.make('publish', manifest_error=message)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual([call['args'][0] for call in self.calls()[before:]],
-                                 ['manifest', 'run', 'build', 'push'])
+                                 ['manifest', 'run', 'build', 'image', 'push'])
+
+    def test_existing_manifest_digest_blocks_new_tag_after_build(self):
+        digest = 'sha256:' + 'a' * 64
+        image = 'ghcr.io/example/image:new'
+        result = self.make('publish', 'IMAGE=' + image, extra_env={
+            'FAKE_REPO_DIGESTS': 'other.registry/source@' + digest,
+            'FAKE_DIGEST_STATUS': 'present'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([call['args'][0] for call in self.calls()],
+                         ['manifest', 'run', 'build', 'image', 'manifest'])
+        self.assertEqual(self.calls()[-1]['args'],
+                         ['manifest', 'inspect', 'ghcr.io/example/image@' + digest])
+        self.assertIn('already present remotely', result.stderr)
+        self.assertIn('nothing was pushed', result.stderr)
+
+    def test_missing_digest_allows_push_and_preserves_registry_port(self):
+        digest = 'sha256:' + 'b' * 64
+        result = self.make('publish', 'IMAGE=registry.example:5000/team/image:new',
+                           extra_env={'FAKE_REPO_DIGESTS': 'old.registry/image@' + digest})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['args'][0] for call in self.calls()],
+                         ['manifest', 'run', 'build', 'image', 'manifest', 'push'])
+        self.assertEqual(self.calls()[-2]['args'],
+                         ['manifest', 'inspect', 'registry.example:5000/team/image@' + digest])
+
+    def test_unknown_digest_is_reported_and_not_replaced_with_image_id(self):
+        result = self.make('publish')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('No local manifest digest available', result.stdout)
+        self.assertEqual(sum(call['args'][0] == 'manifest' for call in self.calls()), 1)
+        self.assertEqual(self.calls()[-1]['args'][0], 'push')
+
+    def test_digest_check_errors_prevent_push(self):
+        digest = 'sha256:' + 'c' * 64
+        for message in ['unauthorized: authentication required', 'dial tcp: i/o timeout']:
+            with self.subTest(message=message):
+                before = len(self.calls()) if self.log.exists() else 0
+                result = self.make('publish', extra_env={
+                    'FAKE_REPO_DIGESTS': 'ghcr.io/example/image@' + digest,
+                    'FAKE_DIGEST_ERROR': message})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual([call['args'][0] for call in self.calls()[before:]],
+                                 ['manifest', 'run', 'build', 'image', 'manifest'])
+                self.assertIn('Could not check remote manifest', result.stderr)
+
+    def test_local_inspection_failure_prevents_push(self):
+        result = self.make('publish', extra_env={'FAKE_IMAGE_INSPECT_EXIT': '7'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls()[-1]['args'][:2], ['image', 'inspect'])
+        self.assertIn('Cannot inspect the built image', result.stderr)
+
+    def test_known_digests_are_deduplicated(self):
+        first = 'sha256:' + 'd' * 64
+        second = 'sha256:' + 'e' * 64
+        result = self.make('publish', extra_env={'FAKE_REPO_DIGESTS':
+            'registry.one/image@' + first + '\nregistry.two/image@' + first +
+            '\nregistry.three/image@' + second})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        probes = [c for c in self.calls() if c['args'][:2] == ['manifest', 'inspect']]
+        self.assertEqual(len(probes), 3)  # One tag check, two distinct digest checks.
 
     def test_local_build_is_unguarded_even_when_remote_tag_exists(self):
         result = self.make('build', manifest_status='present')
@@ -118,7 +182,7 @@ if sys.argv[1] == 'build':
         result = self.make('--jobs=4', 'publish')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([call['args'][0] for call in self.calls()],
-                         ['manifest', 'run', 'build', 'push'])
+                         ['manifest', 'run', 'build', 'image', 'push'])
 
     @unittest.skipUnless(shutil.which('bash'), 'Requires Bash')
     def test_build_conf_is_sourceable_and_supplies_default_versions(self):
@@ -211,7 +275,9 @@ if sys.argv[1] == 'build':
         image = 'ghcr.io/example/faostat:2.0.0'
         result = self.make('publish', 'VERSION=2.0.0', 'DATABASE_VERSION=1.0.0', 'IMAGE=' + image)
         self.assertEqual(result.returncode, 0, result.stderr)
-        inspect, resolve, build, push = self.calls()
+        inspect, resolve, build, local_inspect, push = self.calls()
+        self.assertEqual(local_inspect['args'][:2], ['image', 'inspect'])
+        self.assertEqual(local_inspect['args'][-1], image)
         self.assertEqual(inspect['args'], ['manifest', 'inspect', image])
         self.assertEqual(resolve['args'][0], 'run')
         self.assertEqual(build['cwd'], str(ENDPOINT))

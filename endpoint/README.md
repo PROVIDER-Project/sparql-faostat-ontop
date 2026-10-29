@@ -86,7 +86,14 @@ Authentication/network errors also stop it; only an explicit missing manifest
 allows building and pushing. This is best-effort: a concurrent publisher can
 still create the tag between the check and push.
 
-`build` freely replaces the local image and never performs this registry check.
+After building, `publish` also checks locally known manifest digests against the
+destination repository, regardless of tag, and stops if one already exists.
+It does not compare local image IDs with registry manifest digests. If Docker
+has no local manifest digest, this best-effort check is skipped with a message.
+This is exact-manifest detection, not a comparison of equivalent filesystem
+contents; changed labels or build attestations can produce different digests.
+
+`build` freely replaces the local image and performs neither registry check.
 Authenticate with a GitHub token that can write packages and choose public package visibility if
 anonymous pulls are needed. See [GitHub's registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 Use new endpoint versions for mapping/configuration changes; the database
